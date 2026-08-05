@@ -1,0 +1,828 @@
+/* =========================================================================
+   CollainSight — Animated Explainer
+   Brand tokens sourced from docs/product/12_UI_UX_SPECIFICATION.md
+   ========================================================================= */
+
+:root {
+  --background: #07080d;
+  --foreground: #e8ecf8;
+  --muted-foreground: #6b7599;
+  --border: rgba(255, 255, 255, 0.08);
+  --card: rgba(13, 16, 24, 0.55);
+
+  --accent-blue: #2563eb;
+  --accent-blue-2: #3b82f6;
+  --accent-cyan: #06b6d4;
+  --accent-violet: #8b5cf6;
+  --accent-emerald: #10b981;
+  --accent-amber: #f59e0b;
+
+  --font-heading: 'Montserrat Alternates', sans-serif;
+  --font-body: 'Plus Jakarta Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --crossfade: 700ms;
+  --ease-cinematic: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--background);
+  font-family: var(--font-body);
+  color: var(--foreground);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------------------------------------------------------------------
+   Stage
+   --------------------------------------------------------------------- */
+
+.stage {
+  position: relative;
+  width: 100%;
+  max-width: 1920px;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--background);
+  isolation: isolate;
+}
+
+.defs-pool {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------------
+   Ambient background layer (continuous, independent of scene timeline)
+   --------------------------------------------------------------------- */
+
+.bg-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.bg-layer svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#bg-orb-blue {
+  animation: orb-drift-a 22s ease-in-out infinite;
+}
+
+#bg-orb-cyan {
+  animation: orb-drift-b 26s ease-in-out infinite;
+}
+
+@keyframes orb-drift-a {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(40px, 30px) scale(1.08); }
+}
+
+@keyframes orb-drift-b {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-50px, -25px) scale(1.05); }
+}
+
+/* ---------------------------------------------------------------------
+   Scene stack
+   --------------------------------------------------------------------- */
+
+.scenes {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  opacity: 0;
+  pointer-events: none;
+  will-change: opacity, transform;
+  transform: scale(1);
+}
+
+.scene-title {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 46px;
+  fill: var(--foreground);
+  letter-spacing: -0.01em;
+}
+
+.scene-title--sm {
+  font-size: 30px;
+}
+
+.scene-subtitle {
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 22px;
+  fill: var(--muted-foreground);
+}
+
+.tagline {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 26px;
+  fill: var(--muted-foreground);
+  opacity: 0;
+  transform: translateY(16px);
+}
+
+/* ---------------------------------------------------------------------
+   Generic entrance helpers
+   (restarted every scene activation via JS remove/reflow/add of .is-active)
+   --------------------------------------------------------------------- */
+
+.enter-fade {
+  opacity: 0;
+}
+
+.scene.is-active .enter-fade {
+  animation: fade-in 900ms var(--ease-cinematic) forwards;
+  animation-delay: var(--d, 0s);
+}
+
+.enter-stagger > * {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.scene.is-active .enter-stagger > * {
+  animation: pop-in 700ms var(--ease-cinematic) forwards;
+  animation-delay: var(--d, 0s);
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pop-in {
+  0% { opacity: 0; transform: scale(0.6); }
+  70% { opacity: 1; transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* ---------------------------------------------------------------------
+   Path drawing (stroke-dasharray / dashoffset), length set by script.js
+   --------------------------------------------------------------------- */
+
+[data-draw] {
+  stroke-dasharray: var(--len, 1000);
+  stroke-dashoffset: var(--len, 1000);
+}
+
+.scene.is-active [data-draw] {
+  animation: draw-path 1.1s var(--ease-cinematic) forwards;
+  animation-delay: var(--d, 0s);
+}
+
+@keyframes draw-path {
+  to { stroke-dashoffset: 0; }
+}
+
+/* ---------------------------------------------------------------------
+   Scene 1 — The Problem
+   --------------------------------------------------------------------- */
+
+.packet {
+  fill: url(#grad-edge);
+  offset-path: var(--packet-path);
+  offset-rotate: 0deg;
+  offset-distance: 0%;
+  animation-play-state: paused;
+}
+
+.scene.is-active .packet--travel {
+  animation: packet-travel var(--dur, 4s) linear var(--delay, 0s) infinite;
+  animation-play-state: running;
+}
+
+.scene.is-active .packet--drop {
+  animation: packet-drop var(--dur, 4s) ease-in var(--delay, 0s) infinite;
+  animation-play-state: running;
+}
+
+@keyframes packet-travel {
+  from { offset-distance: 0%; opacity: 0.95; }
+  to { offset-distance: 100%; opacity: 0.95; }
+}
+
+@keyframes packet-drop {
+  0%   { offset-distance: 0%;  opacity: 0;   transform: translateY(0) rotate(0deg) scale(0.8); }
+  8%   { opacity: 0.95; transform: scale(1); }
+  52%  { offset-distance: 52%; opacity: 0.95; transform: translateY(0) rotate(0deg); }
+  100% { offset-distance: 56%; opacity: 0;   transform: translateY(170px) rotate(40deg); }
+}
+
+.shard {
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-width: 1;
+}
+
+.shard--blue    { fill: rgba(37, 99, 235, 0.75); }
+.shard--cyan    { fill: rgba(6, 182, 212, 0.75); }
+.shard--violet  { fill: rgba(139, 92, 246, 0.75); }
+.shard--emerald { fill: rgba(16, 185, 129, 0.75); }
+.shard--amber   { fill: rgba(245, 158, 11, 0.75); }
+
+.shard--float {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: shard-float 7s ease-in-out calc(var(--d, 0s) * 1.4) infinite alternate;
+  animation-play-state: paused;
+}
+
+.scene.is-active .shard--float {
+  animation-play-state: running;
+}
+
+@keyframes shard-float {
+  from { transform: translate(0, 0) rotate(0deg); }
+  to   { transform: translate(calc(var(--fx, 1) * 14px), calc(var(--fy, 1) * 12px)) rotate(calc(var(--fx, 1) * 6deg)); }
+}
+
+/* ---------------------------------------------------------------------
+   Scene 2 — Scattered Knowledge
+   --------------------------------------------------------------------- */
+
+.broken-link {
+  fill: none;
+  stroke: var(--muted-foreground);
+  stroke-width: 2;
+  stroke-dasharray: 6 10;
+  opacity: 0.5;
+}
+
+/* ---------------------------------------------------------------------
+   Scene 3 — AI Analyzes
+   --------------------------------------------------------------------- */
+
+#scene3-core-ring-outer {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: spin 14s linear infinite;
+  animation-play-state: paused;
+}
+
+#scene3-core-ring-inner {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: spin-reverse 10s linear infinite;
+  animation-play-state: paused;
+}
+
+.scene.is-active #scene3-core-ring-outer,
+.scene.is-active #scene3-core-ring-inner {
+  animation-play-state: running;
+}
+
+#scene3-core-hex {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: core-pulse 2.4s ease-in-out infinite;
+  animation-play-state: paused;
+}
+
+#scene3-core-nucleus {
+  animation: nucleus-pulse 2.4s ease-in-out infinite;
+  animation-play-state: paused;
+}
+
+.scene.is-active #scene3-core-hex,
+.scene.is-active #scene3-core-nucleus {
+  animation-play-state: running;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes spin-reverse {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(-360deg); }
+}
+
+@keyframes core-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.06); opacity: 0.9; }
+}
+
+@keyframes nucleus-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+
+#scene3-scan-beam {
+  transform-box: fill-box;
+  transform-origin: 800px 450px;
+  opacity: 0;
+  animation: scan-rotate 5.5s linear infinite;
+  animation-play-state: paused;
+}
+
+.scene.is-active #scene3-scan-beam {
+  animation-play-state: running;
+  opacity: 1;
+}
+
+@keyframes scan-rotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.scan-target .shard-shape,
+.scan-target .node-shape {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.scan-target .shard-shape {
+  opacity: 1;
+}
+
+.scan-target .node-shape {
+  opacity: 0;
+  transform: scale(0.4);
+}
+
+.scene.is-active .scan-target .shard-shape {
+  animation: scan-fade-out 500ms ease forwards;
+  animation-delay: calc(var(--d, 0s) + 700ms);
+}
+
+.scene.is-active .scan-target .node-shape {
+  animation: scan-fade-in 600ms var(--ease-cinematic) forwards;
+  animation-delay: calc(var(--d, 0s) + 750ms);
+}
+
+@keyframes scan-fade-out {
+  to { opacity: 0; transform: scale(0.5) rotate(25deg); }
+}
+
+@keyframes scan-fade-in {
+  0%   { opacity: 0; transform: scale(0.3); }
+  60%  { opacity: 1; transform: scale(1.25); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* ---------------------------------------------------------------------
+   Nodes & edges (Scenes 4, 5, 7)
+   --------------------------------------------------------------------- */
+
+.node {
+  stroke: rgba(255, 255, 255, 0.35);
+  stroke-width: 1.5;
+  filter: url(#soft-glow);
+}
+
+.node--blue    { fill: var(--accent-blue); }
+.node--cyan    { fill: var(--accent-cyan); }
+.node--violet  { fill: var(--accent-violet); }
+.node--emerald { fill: var(--accent-emerald); }
+.node--amber   { fill: var(--accent-amber); }
+
+.edge {
+  fill: none;
+  stroke: url(#grad-edge);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0.8;
+}
+
+#scene5-edges-base .edge,
+#scene5-nodes-base .node {
+  opacity: 0.8;
+}
+
+.edge-pulse {
+  fill: #e8ecf8;
+  filter: url(#soft-glow);
+  offset-rotate: 0deg;
+  offset-distance: 0%;
+  opacity: 0;
+  animation-play-state: paused;
+}
+
+.scene.is-active .edge-pulse {
+  offset-path: var(--pulse-path);
+  animation: pulse-travel var(--dur, 3s) linear infinite;
+  animation-play-state: running;
+}
+
+@keyframes pulse-travel {
+  0%   { offset-distance: 0%; opacity: 0; }
+  8%   { opacity: 1; }
+  92%  { opacity: 1; }
+  100% { offset-distance: 100%; opacity: 0; }
+}
+
+.graph-breathe {
+  transform-box: fill-box;
+  transform-origin: 760px 450px;
+  animation: breathe 9s ease-in-out infinite;
+  animation-play-state: paused;
+}
+
+.scene.is-active .graph-breathe {
+  animation-play-state: running;
+}
+
+@keyframes breathe {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  50%      { transform: rotate(1.2deg) scale(1.015); }
+}
+
+.counter-value {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 64px;
+  fill: url(#grad-brand);
+}
+
+.counter-label {
+  font-family: var(--font-body);
+  font-size: 18px;
+  fill: var(--muted-foreground);
+}
+
+/* ---------------------------------------------------------------------
+   Scene 6 — Insight cards
+   --------------------------------------------------------------------- */
+
+.insight-card {
+  opacity: 0;
+  transform: translateY(40px);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.scene.is-active .insight-card {
+  animation: card-rise 800ms var(--ease-cinematic) forwards;
+  animation-delay: var(--d, 0s);
+}
+
+@keyframes card-rise {
+  from { opacity: 0; transform: translateY(40px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.card-bg {
+  fill: var(--card);
+  stroke: none;
+}
+
+.card-edge {
+  fill: none;
+  stroke: url(#grad-brand);
+  stroke-width: 1.4;
+  opacity: 0.35;
+}
+
+.card-icon {
+  fill: none;
+  stroke: url(#grad-brand);
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#scene6-icon-link {
+  stroke: url(#grad-brand);
+  stroke-width: 7;
+}
+
+#scene6-icon-spark {
+  fill: url(#grad-brand);
+  stroke: none;
+}
+
+.sparkline {
+  fill: none;
+  stroke: var(--accent-cyan);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.85;
+}
+
+.card-value {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 48px;
+  fill: var(--foreground);
+}
+
+.card-label {
+  font-family: var(--font-body);
+  font-size: 17px;
+  fill: var(--muted-foreground);
+}
+
+/* ---------------------------------------------------------------------
+   Scene 7 — Better Collaboration
+   --------------------------------------------------------------------- */
+
+.team-edge,
+.team-spoke {
+  fill: none;
+  stroke: url(#grad-edge);
+}
+
+.scene.is-active .team-edge,
+.scene.is-active .team-spoke {
+  animation: draw-team-edge 1.4s var(--ease-cinematic) forwards;
+  animation-delay: var(--d, 0s);
+}
+
+@keyframes draw-team-edge {
+  0%   { stroke-dashoffset: var(--len, 400); stroke-width: 1.4; opacity: 0.45; }
+  55%  { stroke-dashoffset: 0; stroke-width: 1.4; opacity: 0.6; }
+  100% { stroke-dashoffset: 0; stroke-width: 3; opacity: 1; }
+}
+
+.person {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.person-head {
+  fill: var(--foreground);
+}
+
+.person-shoulder {
+  fill: none;
+  stroke: var(--foreground);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.sync-ring {
+  fill: none;
+  stroke: var(--accent-cyan);
+  stroke-width: 2;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation-play-state: paused;
+}
+
+.scene.is-active .sync-ring {
+  animation: sync-ping 2.6s var(--ease-cinematic) infinite;
+  animation-play-state: running;
+}
+
+.sync-ring--delay {
+  animation-delay: 1.3s;
+}
+
+.sync-core {
+  fill: var(--accent-cyan);
+  filter: url(#soft-glow);
+  opacity: 0;
+  animation-play-state: paused;
+}
+
+.scene.is-active .sync-core {
+  animation: fade-in 600ms ease forwards 1.4s;
+  animation-play-state: running;
+}
+
+@keyframes sync-ping {
+  0%   { opacity: 0.7; transform: scale(0.4); }
+  70%  { opacity: 0; transform: scale(2.2); }
+  100% { opacity: 0; transform: scale(2.2); }
+}
+
+/* ---------------------------------------------------------------------
+   Scene 8 — CollainSight reveal
+   --------------------------------------------------------------------- */
+
+.logo-mark-stroke {
+  filter: url(#soft-glow);
+}
+
+.scene.is-active .logo-mark-stroke {
+  animation: draw-path 1.7s var(--ease-cinematic) forwards;
+  animation-delay: 0.1s;
+}
+
+.logo-fill {
+  opacity: 0;
+}
+
+.logo-fill--mark {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.scene.is-active .logo-fill--mark {
+  animation: fade-in 700ms ease forwards 1.7s;
+}
+
+.logo-fill--wordmark {
+  transform-box: fill-box;
+  transform-origin: left center;
+  transform: translateY(14px);
+}
+
+.scene.is-active .logo-fill--wordmark {
+  animation: wordmark-rise 800ms var(--ease-cinematic) forwards 2.1s;
+}
+
+@keyframes wordmark-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.logo-fill--sparkle {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(0.2);
+}
+
+.scene.is-active .logo-fill--sparkle {
+  animation: sparkle-pop 700ms var(--ease-cinematic) forwards 2.7s,
+             sparkle-twinkle 2.4s ease-in-out infinite 3.5s;
+}
+
+@keyframes sparkle-pop {
+  0%   { opacity: 0; transform: scale(0.2) rotate(-25deg); }
+  70%  { opacity: 1; transform: scale(1.25) rotate(6deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+
+@keyframes sparkle-twinkle {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.6; }
+}
+
+.scene.is-active .tagline {
+  animation: wordmark-rise 800ms var(--ease-cinematic) forwards 3.1s;
+}
+
+/* ---------------------------------------------------------------------
+   HUD — progress, scene dots, replay
+   --------------------------------------------------------------------- */
+
+.hud {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 28px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.progress-track {
+  width: min(70%, 640px);
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));
+  border-radius: 2px;
+}
+
+.scene-dots {
+  display: flex;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.scene-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.22);
+  cursor: pointer;
+  transition: background 300ms ease, transform 300ms ease;
+}
+
+.scene-dot:hover {
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.scene-dot.is-current {
+  background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));
+  transform: scale(1.3);
+}
+
+.replay-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--foreground);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 18px;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+  transition: opacity 400ms ease, transform 400ms ease, background 200ms ease;
+}
+
+.replay-btn:hover {
+  background: rgba(37, 99, 235, 0.25);
+}
+
+.replay-btn.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* ---------------------------------------------------------------------
+   Reduced motion
+   --------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  #bg-orb-blue,
+  #bg-orb-cyan,
+  #scene3-core-ring-outer,
+  #scene3-core-ring-inner,
+  #scene3-core-hex,
+  #scene3-core-nucleus,
+  #scene3-scan-beam,
+  .graph-breathe,
+  .shard--float,
+  .sync-ring,
+  .sync-core,
+  .logo-fill--sparkle,
+  .packet--travel,
+  .packet--drop,
+  .edge-pulse {
+    animation: none !important;
+    opacity: 1;
+  }
+
+  .scene {
+    transition: opacity 300ms linear;
+  }
+
+  [data-draw] {
+    stroke-dashoffset: 0 !important;
+  }
+
+  .enter-fade,
+  .enter-stagger > *,
+  .insight-card,
+  .logo-fill,
+  .tagline {
+    animation-duration: 1ms !important;
+    animation-delay: 0s !important;
+    opacity: 1;
+    transform: none;
+  }
+}

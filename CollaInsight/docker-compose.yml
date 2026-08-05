@@ -1,0 +1,86 @@
+# CollaInsight local development environment.
+#
+# Phase 1 scope only: runs n8n so the Telegram -> n8n -> LLM -> JSON workflow
+# can be built and validated. Telegram, the LLM provider, and Supabase are
+# NOT configured here - those are entered as n8n credentials/workflow steps
+# once Phase 1 actually needs them, not as container environment variables.
+#
+# When the backend service exists (a later phase), it joins this same file
+# as a second entry under `services:`, on the same default network, so n8n
+# can reach it at http://backend:<port> instead of localhost.
+#
+# `ngrok` gives n8n a public HTTPS URL so Telegram's webhook can reach it.
+# Free plan includes one persistent static domain per account (see
+# .env.example for how to get it), so unlike the Cloudflare Quick Tunnel
+# below, this URL does NOT change across restarts - no sync script needed.
+#
+# `cloudflared` and `tailscale` (below, both commented out) are earlier
+# attempts, kept for reference:
+# - cloudflared (Quick Tunnel): free, no account needed, but its
+#   trycloudflare.com URL changes every restart. scripts/sync-quick-tunnel.sh
+#   handles that if you switch back to it.
+# - tailscale (Funnel): parked - Tailscale's control plane has a known bug
+#   where it reports "Funnel on" without ever publishing the public DNS
+#   record, so nothing external could reach it. See
+#   docs/PROJECT_UNDERSTANDING.md for status.
+
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:2.33.0
+    container_name: collainsight-n8n
+    restart: unless-stopped
+    ports:
+      - "${N8N_HOST_PORT:-5678}:5678"
+    env_file:
+      - .env
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: collainsight-tunnel
+    restart: unless-stopped
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    command: http n8n:5678 --url ${NGROK_DOMAIN}
+    depends_on:
+      - n8n
+
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   container_name: collainsight-tunnel
+  #   restart: unless-stopped
+  #   command: tunnel --no-autoupdate --protocol http2 --url http://n8n:5678
+  #   depends_on:
+  #     - n8n
+
+  # tailscale:
+  #   image: tailscale/tailscale:latest
+  #   container_name: collainsight-tailscale
+  #   hostname: ${TS_HOSTNAME:-collainsight-n8n}
+  #   restart: unless-stopped
+  #   environment:
+  #     - TS_AUTHKEY=${TS_AUTHKEY}
+  #     - TS_STATE_DIR=/var/lib/tailscale
+  #     - TS_SERVE_CONFIG=/config/serve-config.json
+  #     - TS_USERSPACE=false
+  #   volumes:
+  #     - ts_state:/var/lib/tailscale
+  #     - ./tailscale/serve-config.json:/config/serve-config.json:ro
+  #   devices:
+  #     - /dev/net/tun:/dev/net/tun
+  #   cap_add:
+  #     - net_admin
+  #   sysctls:
+  #     # Docker Desktop/WSL2 sometimes hands the container IPv6 addresses
+  #     # with no real IPv6 route out, so tailscaled dead-ends on "network
+  #     # is unreachable" instead of using IPv4. Force IPv4-only.
+  #     - net.ipv6.conf.all.disable_ipv6=1
+  #   depends_on:
+  #     - n8n
+
+volumes:
+  n8n_data:
+    name: collainsight_n8n_data
+  ts_state:
+    name: collainsight_ts_state

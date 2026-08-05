@@ -1,0 +1,177 @@
+{
+  "id": "Nm9U2yPuQV7jEsbq",
+  "name": "CollaInsight - Phase 1 - Discussion Extraction",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        0,
+        0
+      ],
+      "id": "b610ccf7-b80e-4892-834c-8f4403ea5ce4",
+      "name": "Telegram Trigger",
+      "webhookId": "a2f6d8c1-4e3b-4f7a-9c15-7b8e2d1a6f93"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "dca6fe1e-37a2-4e54-aab0-a0d7d38c449d",
+              "leftValue": "{{$json.message.text}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "1f232088-4e48-480c-8cca-f36eb9b916a8",
+              "leftValue": "{{$json.message.text}}",
+              "rightValue": "/",
+              "operator": {
+                "type": "string",
+                "operation": "notStartsWith"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        224,
+        0
+      ],
+      "id": "d1ad7432-f7be-4181-b857-d953f7327d85",
+      "name": "Filter"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "models/gemini-3-flash-preview"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are a discussion-extraction engine for a Telegram group chat used by a training program. You are not a chatbot: do not answer questions, do not brainstorm, do not chat back, do not add commentary. Your only job is to look at ONE message from the group discussion and decide if it contains something a manager should know about.\n\nAllowed categories (choose exactly one, never invent another, never use a category outside this list):\n- Idea: a new possibility or proposal that does not yet exist.\n- Suggestion: a proposed change or improvement to something that already exists or is already being done.\n- Decision: a choice that has already been made or agreed upon, even if stated briefly (\"we decided...\", \"we're going with...\", \"let's just use...\").\n- Action Item: a task someone needs to do, whether self-assigned or assigned to others.\n- Question: something that needs an answer from someone else, especially if it blocks progress.\n- Observation: a factual note about what is happening (e.g. a pattern, a problem, confusion, progress) that isn't itself an idea, suggestion, decision, action item, or question.\n\nIf the message does NOT clearly belong to one of these categories (greetings, small talk, acknowledgments like \"ok\"/\"thanks\", emojis, off-topic chatter), respond with exactly one word and nothing else:\nSKIP\n\nIf it DOES belong to one of these categories, respond with ONLY a single JSON object, no markdown code fences, no explanation, in exactly this shape:\n{\"category\": \"<one of the six categories above, exact spelling>\", \"title\": \"<short title, under 8 words>\", \"summary\": \"<one or two sentence summary, organize the point, do not just restate the wording>\", \"key_points\": [\"...\"], \"tags\": [\"...\"], \"open_questions\": [\"...\"]}\n\nExamples (message -> output):\n\nMessage: \"we decided to use React for the frontend\"\nOutput: {\"category\": \"Decision\", \"title\": \"Frontend framework: React\", \"summary\": \"The team decided to use React as the frontend framework.\", \"key_points\": [\"React chosen for frontend\"], \"tags\": [\"frontend\", \"react\"], \"open_questions\": []}\n\nMessage: \"what if we added a leaderboard to keep people motivated\"\nOutput: {\"category\": \"Idea\", \"title\": \"Add a motivational leaderboard\", \"summary\": \"Proposal to introduce a leaderboard to increase motivation.\", \"key_points\": [\"New leaderboard feature suggested for motivation\"], \"tags\": [\"engagement\", \"gamification\"], \"open_questions\": [\"How would ranking be calculated?\"]}\n\nMessage: \"maybe we should shorten the daily standup to 10 minutes\"\nOutput: {\"category\": \"Suggestion\", \"title\": \"Shorten daily standup\", \"summary\": \"Proposal to reduce the existing daily standup to 10 minutes.\", \"key_points\": [\"Standup length reduced to 10 minutes\"], \"tags\": [\"process\", \"meetings\"], \"open_questions\": []}\n\nMessage: \"can someone email the mentors by tomorrow about the schedule change\"\nOutput: {\"category\": \"Action Item\", \"title\": \"Email mentors about schedule change\", \"summary\": \"Someone needs to email the mentors by tomorrow regarding the schedule change.\", \"key_points\": [\"Email mentors\", \"Deadline: tomorrow\", \"Topic: schedule change\"], \"tags\": [\"mentors\", \"schedule\"], \"open_questions\": [\"Who is responsible for sending it?\"]}\n\nMessage: \"can we move the deadline to next friday?\"\nOutput: {\"category\": \"Question\", \"title\": \"Deadline extension request\", \"summary\": \"Asking whether the deadline can be moved to next Friday.\", \"key_points\": [\"Requesting deadline move to next Friday\"], \"tags\": [\"deadline\"], \"open_questions\": [\"Will the deadline be moved?\"]}\n\nMessage: \"a lot of people seem confused about the assignment instructions\"\nOutput: {\"category\": \"Observation\", \"title\": \"Confusion about assignment instructions\", \"summary\": \"Multiple people appear confused about the assignment instructions.\", \"key_points\": [\"Widespread confusion about assignment instructions\"], \"tags\": [\"assignment\", \"confusion\"], \"open_questions\": []}\n\nMessage: \"ok thanks\"\nOutput: SKIP\n\nMessage: \"lol nice\"\nOutput: SKIP\n\nBefore answering, silently think through: what is the main point of this message, why would a manager care, what are the essential parts, is anything unclear or missing. Do not reveal this thinking in your response, only output SKIP or the JSON object.\n\nSelf-check before responding: Does the category match exactly one of the six allowed values, spelled exactly as listed? Is every fact taken only from the message, with nothing invented? Is anything uncertain placed in open_questions instead of guessed at? If open_questions or key_points have nothing to add, use an empty array, never omit the field.\n\nMessage:\n{{ $('Telegram Trigger').item.json.message.text }}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        448,
+        0
+      ],
+      "id": "b7c5a4f1-9641-4494-a640-42cbb67920ff",
+      "name": "Message a model"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $input.item.json;\nfunction extractText(obj) {\n  if (typeof obj === 'string') return obj;\n  if (obj && obj.text) return obj.text;\n  if (obj && obj.content) return typeof obj.content === 'string' ? obj.content : ((obj.content.parts && obj.content.parts[0] && obj.content.parts[0].text) || '');\n  if (obj && obj.candidates && obj.candidates[0] && obj.candidates[0].content && obj.candidates[0].content.parts && obj.candidates[0].content.parts[0]) return obj.candidates[0].content.parts[0].text;\n  if (obj && obj.response && obj.response.text) return obj.response.text;\n  return '';\n}\nconst modelText = (extractText(raw) || '').trim();\nconst ALLOWED_CATEGORIES = ['Idea', 'Suggestion', 'Decision', 'Action Item', 'Question', 'Observation'];\nconst tg = $('Telegram Trigger').item.json.message;\nif (!modelText || modelText.toUpperCase() === 'SKIP') {\n  return { json: { is_valid: false, skipped: true, data: null, message: 'Model marked this message as not worth extracting.', raw_model_output: modelText } };\n}\nlet cleaned = modelText;\nif (cleaned.indexOf('```') === 0) {\n  cleaned = cleaned.replace(/^```(json)?/i, '').replace(/```$/, '').trim();\n}\nlet parsed;\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  return { json: { is_valid: false, skipped: false, data: null, message: 'Model output was not valid JSON (treated as a refusal, not an error).', raw_model_output: modelText } };\n}\nif (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {\n  return { json: { is_valid: false, skipped: false, data: null, message: 'Model output was not a JSON object.', raw_model_output: modelText } };\n}\nconst requiredStringFields = ['category', 'title', 'summary'];\nconst requiredArrayFields = ['key_points', 'tags', 'open_questions'];\nfor (const field of requiredStringFields) {\n  if (typeof parsed[field] !== 'string' || !parsed[field].trim()) {\n    return { json: { is_valid: false, skipped: false, data: null, message: 'Missing or invalid required field: ' + field, raw_model_output: modelText } };\n  }\n}\nfor (const field of requiredArrayFields) {\n  if (!Array.isArray(parsed[field])) {\n    return { json: { is_valid: false, skipped: false, data: null, message: 'Missing or invalid required field: ' + field, raw_model_output: modelText } };\n  }\n}\nif (ALLOWED_CATEGORIES.indexOf(parsed.category) === -1) {\n  return { json: { is_valid: false, skipped: false, data: null, message: 'Category \"' + parsed.category + '\" is not one of the allowed categories.', raw_model_output: modelText } };\n}\nreturn { json: { is_valid: true, skipped: false, message: 'ok', data: { category: parsed.category, title: parsed.title, summary: parsed.summary, key_points: parsed.key_points, tags: parsed.tags, open_questions: parsed.open_questions }, telegram_message_id: tg.message_id, telegram_chat_id: tg.chat.id, telegram_from: (tg.from && (tg.from.username || tg.from.first_name)) || 'unknown' } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576.25,
+        0
+      ],
+      "id": "4b5ff305-d47d-4f44-99cf-ea2c7e772f14",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ $json.is_valid ? ('✅ ' + $json.data.category + ': ' + $json.data.title + '\\n' + $json.data.summary) : ($json.skipped ? ('⏭ SKIPPED — ' + $json.message) : ('❌ INVALID — ' + $json.message + '\\nRaw: ' + $json.raw_model_output)) }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        800,
+        0
+      ],
+      "id": "e2a4a5d1-6b3f-4e1a-9c2d-7f8a1b3c4d5e",
+      "name": "Send Debug Reply"
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Send Debug Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "pinData": {},
+  "tags": []
+}

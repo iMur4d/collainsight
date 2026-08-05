@@ -1,0 +1,11 @@
+@import './fonts.css';
+@import './tailwind.css';
+@import './theme.css';
+
+/* Global Glassmorphism Application */
+[style*="--card"],
+[style*="--sidebar-bg"],
+[style*="--topbar-bg"] {
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+}
