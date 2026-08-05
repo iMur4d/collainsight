@@ -1,0 +1,14 @@
+<svg width="90" height="65" viewBox="762 10 90 65" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>CollainSight — three-node connected-graph accent (current brand mark)</title>
+  <defs>
+    <linearGradient id="accent-grad" x1="762" y1="10" x2="852" y2="75" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2563EB" />
+      <stop offset="0.5" stop-color="#06B6D4" />
+      <stop offset="1" stop-color="#3B82F6" />
+    </linearGradient>
+  </defs>
+  <path id="accent-edge" d="M775.287 32.7421L823.477 21.5284L843.685 67.4272" fill="none" stroke="url(#accent-grad)" stroke-width="3.87164" />
+  <circle id="accent-node-1" cx="772.481" cy="32.5139" r="8.22724" fill="url(#accent-grad)" />
+  <circle id="accent-node-2" cx="822.264" cy="21.0778" r="8.22724" fill="url(#accent-grad)" />
+  <circle id="accent-node-3" cx="843.564" cy="67.3532" r="8.22724" fill="url(#accent-grad)" />
+</svg>

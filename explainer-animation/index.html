@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CollainSight — From Scattered Conversations to Structured Knowledge</title>
+<meta name="description" content="Animated explainer: CollainSight turns scattered team conversations into an AI-organized knowledge graph and better collaboration." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Montserrat+Alternates:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<p id="sr-narrative" class="sr-only">
+  CollainSight animated explainer. Conversations move fast and valuable ideas fall through the cracks.
+  Knowledge ends up scattered across chats with no connections. CollainSight's AI reads and understands
+  every idea, question and task. Relationships between them become visible. The knowledge graph grows
+  automatically. Insights emerge: faster decisions, duplicate discussions surfaced, new collaboration
+  opportunities found. Teams move faster together. This is CollainSight — turning conversations into
+  structured knowledge.
+</p>
+
+<main class="stage" id="stage" role="img" aria-labelledby="sr-narrative">
+
+  <!-- Shared gradient / filter definitions, referenced by id from every scene -->
+  <svg class="defs-pool" aria-hidden="true" focusable="false">
+    <defs>
+      <linearGradient id="grad-brand" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#2563eb" />
+        <stop offset="50%" stop-color="#06b6d4" />
+        <stop offset="100%" stop-color="#3b82f6" />
+      </linearGradient>
+      <linearGradient id="grad-edge" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#2563eb" />
+        <stop offset="100%" stop-color="#06b6d4" />
+      </linearGradient>
+      <radialGradient id="grad-core" cx="50%" cy="50%" r="60%">
+        <stop offset="0%" stop-color="#7dd3fc" />
+        <stop offset="45%" stop-color="#06b6d4" />
+        <stop offset="100%" stop-color="#2563eb" />
+      </radialGradient>
+      <radialGradient id="grad-scan" cx="0%" cy="0%" r="100%">
+        <stop offset="0%" stop-color="#7dd3fc" stop-opacity="0.55" />
+        <stop offset="100%" stop-color="#2563eb" stop-opacity="0" />
+      </radialGradient>
+      <radialGradient id="grad-orb-blue" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#2563eb" stop-opacity="0.55" />
+        <stop offset="100%" stop-color="#2563eb" stop-opacity="0" />
+      </radialGradient>
+      <radialGradient id="grad-orb-cyan" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.45" />
+        <stop offset="100%" stop-color="#06b6d4" stop-opacity="0" />
+      </radialGradient>
+      <pattern id="grid-pattern" width="64" height="64" patternUnits="userSpaceOnUse">
+        <path d="M 64 0 L 0 0 0 64" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="1" />
+      </pattern>
+      <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%">
+        <feGaussianBlur stdDeviation="6" result="blur" />
+        <feMerge>
+          <feMergeNode in="blur" />
+          <feMergeNode in="SourceGraphic" />
+        </feMerge>
+      </filter>
+    </defs>
+  </svg>
+
+  <!-- Ambient background: continuous, independent of scene timeline -->
+  <div class="bg-layer" aria-hidden="true">
+    <svg id="bg-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+      <rect id="bg-grid" x="0" y="0" width="1600" height="900" fill="url(#grid-pattern)" />
+      <circle id="bg-orb-blue" cx="260" cy="180" r="380" fill="url(#grad-orb-blue)" />
+      <circle id="bg-orb-cyan" cx="1360" cy="760" r="340" fill="url(#grad-orb-cyan)" />
+    </svg>
+  </div>
+
+  <!-- Scene stack: one <svg> per story beat, absolutely stacked, cross-faded by script.js -->
+  <div class="scenes" id="scenes">
+
+    <!-- ============================= SCENE 1 — THE PROBLEM ============================= -->
+    <svg class="scene" id="scene-1" data-scene-index="0" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <g class="scene-camera" id="scene1-camera">
+        <path id="scene1-stream-path" data-draw="true"
+              d="M150,470 C 350,380 550,560 750,460 C 950,360 1150,540 1450,450"
+              fill="none" stroke="url(#grad-edge)" stroke-width="3" stroke-linecap="round" opacity="0.55" />
+
+        <g id="scene1-packets">
+          <rect id="scene1-packet-1" class="packet packet--travel" x="-17" y="-9" width="34" height="18" rx="9" style="--packet-path: path('M150,470 C 350,380 550,560 750,460 C 950,360 1150,540 1450,450'); --dur:4.2s; --delay:0s;" />
+          <rect id="scene1-packet-2" class="packet packet--travel" x="-17" y="-9" width="34" height="18" rx="9" style="--packet-path: path('M150,470 C 350,380 550,560 750,460 C 950,360 1150,540 1450,450'); --dur:4.6s; --delay:0.6s;" />
+          <rect id="scene1-packet-3" class="packet packet--travel" x="-17" y="-9" width="34" height="18" rx="9" style="--packet-path: path('M150,470 C 350,380 550,560 750,460 C 950,360 1150,540 1450,450'); --dur:5s; --delay:1.3s;" />
+          <rect id="scene1-packet-4" class="packet packet--drop" x="-17" y="-9" width="34" height="18" rx="9" style="--packet-path: path('M150,470 C 350,380 550,560 750,460 C 950,360 1150,540 1450,450'); --dur:3.4s; --delay:0.3s;" />
+          <rect id="scene1-packet-5" class="packet packet--drop" x="-17" y="-9" width="34" height="18" rx="9" style="--packet-path: path('M150,470 C 350,380 550,560 750,460 C 950,360 1150,540 1450,450'); --dur:3.8s; --delay:1.6s;" />
+          <rect id="scene1-packet-6" class="packet packet--drop" x="-17" y="-9" width="34" height="18" rx="9" style="--packet-path: path('M150,470 C 350,380 550,560 750,460 C 950,360 1150,540 1450,450'); --dur:4.1s; --delay:2.4s;" />
+        </g>
+
+        <g id="scene1-lost-shards" class="enter-stagger">
+          <polygon id="scene1-lost-shard-1" class="shard shard--amber" points="330,650 372,636 388,672 352,694" style="--d:0.2s" />
+          <polygon id="scene1-lost-shard-2" class="shard shard--violet" points="520,700 556,682 582,712 552,738" style="--d:0.5s" />
+          <polygon id="scene1-lost-shard-3" class="shard shard--emerald" points="700,660 736,648 754,682 718,700" style="--d:0.8s" />
+          <polygon id="scene1-lost-shard-4" class="shard shard--amber" points="880,710 912,690 940,718 912,744" style="--d:1.1s" />
+        </g>
+      </g>
+
+      <text id="scene1-title" class="scene-title" x="800" y="180" text-anchor="middle">Conversations move fast.</text>
+      <text id="scene1-subtitle" class="scene-subtitle" x="800" y="222" text-anchor="middle">Valuable ideas fall through the cracks.</text>
+    </svg>
+
+    <!-- ============================= SCENE 2 — SCATTERED KNOWLEDGE ============================= -->
+    <svg class="scene" id="scene-2" data-scene-index="1" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <g class="scene-camera" id="scene2-camera">
+        <g id="scene2-shards" class="enter-stagger">
+          <polygon id="scene2-shard-1" class="shard shard--blue shard--float" points="260,260 302,244 322,282 284,306" style="--d:0.05s;--fx:1;--fy:1;" />
+          <polygon id="scene2-shard-2" class="shard shard--cyan shard--float" points="480,180 520,168 538,204 500,222" style="--d:0.15s;--fx:-1;--fy:1;" />
+          <polygon id="scene2-shard-3" class="shard shard--violet shard--float" points="720,300 760,282 784,318 748,344" style="--d:0.25s;--fx:1;--fy:-1;" />
+          <polygon id="scene2-shard-4" class="shard shard--emerald shard--float" points="980,220 1018,206 1038,242 1000,262" style="--d:0.35s;--fx:-1;--fy:-1;" />
+          <polygon id="scene2-shard-5" class="shard shard--amber shard--float" points="1220,300 1258,284 1280,320 1244,344" style="--d:0.45s;--fx:1;--fy:1;" />
+          <polygon id="scene2-shard-6" class="shard shard--blue shard--float" points="340,540 380,524 402,560 364,584" style="--d:0.55s;--fx:-1;--fy:1;" />
+          <polygon id="scene2-shard-7" class="shard shard--cyan shard--float" points="620,600 656,584 680,618 644,642" style="--d:0.65s;--fx:1;--fy:-1;" />
+          <polygon id="scene2-shard-8" class="shard shard--violet shard--float" points="900,560 940,546 962,582 924,604" style="--d:0.75s;--fx:-1;--fy:-1;" />
+          <polygon id="scene2-shard-9" class="shard shard--emerald shard--float" points="1160,540 1198,524 1220,560 1182,584" style="--d:0.85s;--fx:1;--fy:1;" />
+        </g>
+
+        <g id="scene2-broken-links" class="enter-fade" style="--d:1.1s">
+          <path id="scene2-broken-link-1" class="broken-link" d="M340,290 L440,260" />
+          <path id="scene2-broken-link-2" class="broken-link" d="M760,330 L860,270" />
+        </g>
+      </g>
+
+      <text id="scene2-title" class="scene-title" x="800" y="150" text-anchor="middle">Scattered across conversations.</text>
+      <text id="scene2-subtitle" class="scene-subtitle" x="800" y="192" text-anchor="middle">No connections. No structure. No memory.</text>
+    </svg>
+
+    <!-- ============================= SCENE 3 — AI ANALYZES ============================= -->
+    <svg class="scene" id="scene-3" data-scene-index="2" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <g class="scene-camera" id="scene3-camera">
+
+        <g id="scene3-target-1" class="scan-target" style="--d:0.1s">
+          <polygon class="shard shard--blue shard-shape" points="380,300 418,286 438,320 402,342" />
+          <circle class="node-shape" cx="410" cy="312" r="16" fill="#2563eb" />
+        </g>
+        <g id="scene3-target-2" class="scan-target" style="--d:0.5s">
+          <polygon class="shard shard--cyan shard-shape" points="1180,280 1218,266 1238,300 1202,322" />
+          <circle class="node-shape" cx="1210" cy="292" r="16" fill="#06b6d4" />
+        </g>
+        <g id="scene3-target-3" class="scan-target" style="--d:0.9s">
+          <polygon class="shard shard--violet shard-shape" points="1220,600 1258,586 1278,620 1242,642" />
+          <circle class="node-shape" cx="1250" cy="612" r="16" fill="#8b5cf6" />
+        </g>
+        <g id="scene3-target-4" class="scan-target" style="--d:1.3s">
+          <polygon class="shard shard--emerald shard-shape" points="360,620 398,606 418,640 382,662" />
+          <circle class="node-shape" cx="390" cy="632" r="16" fill="#10b981" />
+        </g>
+        <g id="scene3-target-5" class="scan-target" style="--d:1.7s">
+          <polygon class="shard shard--amber shard-shape" points="230,460 268,446 288,480 252,502" />
+          <circle class="node-shape" cx="260" cy="472" r="16" fill="#f59e0b" />
+        </g>
+        <g id="scene3-target-6" class="scan-target" style="--d:2.1s">
+          <polygon class="shard shard--blue shard-shape" points="1330,460 1368,446 1388,480 1352,502" />
+          <circle class="node-shape" cx="1360" cy="472" r="16" fill="#2563eb" />
+        </g>
+
+        <path id="scene3-scan-beam" d="M800,450 L1180,450 A380,380 0 0 0 995,121 Z" fill="url(#grad-scan)" />
+
+        <g id="scene3-ai-core">
+          <circle id="scene3-core-ring-outer" cx="800" cy="450" r="120" fill="none" stroke="url(#grad-edge)" stroke-width="2" stroke-dasharray="10 14" opacity="0.7" />
+          <circle id="scene3-core-ring-inner" cx="800" cy="450" r="85" fill="none" stroke="#7dd3fc" stroke-width="1.5" stroke-dasharray="4 10" opacity="0.55" />
+          <polygon id="scene3-core-hex" points="800,398 845,424 845,476 800,502 755,476 755,424" fill="url(#grad-core)" filter="url(#soft-glow)" />
+          <circle id="scene3-core-nucleus" cx="800" cy="450" r="14" fill="#e8ecf8" />
+        </g>
+      </g>
+
+      <text id="scene3-title" class="scene-title" x="800" y="160" text-anchor="middle">AI reads. AI understands.</text>
+      <text id="scene3-subtitle" class="scene-subtitle" x="800" y="720" text-anchor="middle">Every idea, question and task — recognized automatically.</text>
+    </svg>
+
+    <!-- ============================= SCENE 4 — RELATIONSHIPS BECOME VISIBLE ============================= -->
+    <svg class="scene" id="scene-4" data-scene-index="3" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <g class="scene-camera" id="scene4-camera">
+        <g id="scene4-edges">
+          <path id="scene4-edge-1" class="edge" data-draw="true" style="--d:0.05s" d="M760,300 L480,220" />
+          <path id="scene4-edge-2" class="edge" data-draw="true" style="--d:0.15s" d="M760,300 L860,560" />
+          <path id="scene4-edge-3" class="edge" data-draw="true" style="--d:0.25s" d="M760,300 L1080,380" />
+          <path id="scene4-edge-4" class="edge" data-draw="true" style="--d:0.35s" d="M480,220 L300,420" />
+          <path id="scene4-edge-5" class="edge" data-draw="true" style="--d:0.45s" d="M520,540 L300,420" />
+          <path id="scene4-edge-6" class="edge" data-draw="true" style="--d:0.55s" d="M520,540 L860,560" />
+          <path id="scene4-edge-7" class="edge" data-draw="true" style="--d:0.65s" d="M860,560 L1180,560" />
+          <path id="scene4-edge-8" class="edge" data-draw="true" style="--d:0.75s" d="M1080,380 L980,240" />
+          <path id="scene4-edge-9" class="edge" data-draw="true" style="--d:0.85s" d="M1080,380 L1180,560" />
+          <path id="scene4-edge-10" class="edge" data-draw="true" style="--d:0.95s" d="M760,300 L520,540" />
+        </g>
+
+        <circle id="scene4-pulse-1" class="edge-pulse" r="4" style="--pulse-path: path('M760,300 L480,220'); --dur:2.4s;" />
+        <circle id="scene4-pulse-2" class="edge-pulse" r="4" style="--pulse-path: path('M760,300 L860,560'); --dur:2.9s;" />
+        <circle id="scene4-pulse-3" class="edge-pulse" r="4" style="--pulse-path: path('M1080,380 L1180,560'); --dur:2.2s;" />
+
+        <g id="scene4-nodes" class="enter-stagger">
+          <circle id="scene4-node-1" class="node node--blue" cx="760" cy="300" r="26" style="--d:0s" />
+          <circle id="scene4-node-2" class="node node--cyan" cx="480" cy="220" r="16" style="--d:0.1s" />
+          <circle id="scene4-node-3" class="node node--blue" cx="300" cy="420" r="14" style="--d:0.2s" />
+          <circle id="scene4-node-4" class="node node--violet" cx="520" cy="540" r="18" style="--d:0.3s" />
+          <circle id="scene4-node-5" class="node node--cyan" cx="860" cy="560" r="15" style="--d:0.4s" />
+          <circle id="scene4-node-6" class="node node--blue" cx="1080" cy="380" r="17" style="--d:0.5s" />
+          <circle id="scene4-node-7" class="node node--amber" cx="1180" cy="560" r="13" style="--d:0.6s" />
+          <circle id="scene4-node-8" class="node node--emerald" cx="980" cy="240" r="14" style="--d:0.7s" />
+        </g>
+      </g>
+
+      <text id="scene4-title" class="scene-title" x="800" y="150" text-anchor="middle">Relationships emerge.</text>
+      <text id="scene4-subtitle" class="scene-subtitle" x="800" y="192" text-anchor="middle">The system connects what belongs together.</text>
+    </svg>
+
+    <!-- ============================= SCENE 5 — KNOWLEDGE GRAPH GROWS ============================= -->
+    <svg class="scene" id="scene-5" data-scene-index="4" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <g class="scene-camera" id="scene5-camera">
+        <g id="scene5-graph-group" class="graph-breathe">
+          <g id="scene5-edges-base">
+            <path class="edge" d="M760,300 L480,220" />
+            <path class="edge" d="M760,300 L860,560" />
+            <path class="edge" d="M760,300 L1080,380" />
+            <path class="edge" d="M480,220 L300,420" />
+            <path class="edge" d="M520,540 L300,420" />
+            <path class="edge" d="M520,540 L860,560" />
+            <path class="edge" d="M860,560 L1180,560" />
+            <path class="edge" d="M1080,380 L980,240" />
+            <path class="edge" d="M1080,380 L1180,560" />
+            <path class="edge" d="M760,300 L520,540" />
+          </g>
+          <g id="scene5-edges-new" class="enter-stagger">
+            <path id="scene5-edge-11" class="edge" data-draw="true" style="--d:0.1s" d="M480,220 L340,160" />
+            <path id="scene5-edge-12" class="edge" data-draw="true" style="--d:0.25s" d="M300,420 L160,470" />
+            <path id="scene5-edge-13" class="edge" data-draw="true" style="--d:0.4s" d="M520,540 L440,680" />
+            <path id="scene5-edge-14" class="edge" data-draw="true" style="--d:0.55s" d="M980,240 L1080,150" />
+            <path id="scene5-edge-15" class="edge" data-draw="true" style="--d:0.7s" d="M1180,560 L1320,610" />
+            <path id="scene5-edge-16" class="edge" data-draw="true" style="--d:0.85s" d="M1080,380 L1260,320" />
+          </g>
+
+          <g id="scene5-nodes-base">
+            <circle class="node node--blue" cx="760" cy="300" r="28" />
+            <circle class="node node--cyan" cx="480" cy="220" r="16" />
+            <circle class="node node--blue" cx="300" cy="420" r="14" />
+            <circle class="node node--violet" cx="520" cy="540" r="18" />
+            <circle class="node node--cyan" cx="860" cy="560" r="15" />
+            <circle class="node node--blue" cx="1080" cy="380" r="17" />
+            <circle class="node node--amber" cx="1180" cy="560" r="13" />
+            <circle class="node node--emerald" cx="980" cy="240" r="14" />
+          </g>
+          <g id="scene5-nodes-new" class="enter-stagger">
+            <circle id="scene5-node-9" class="node node--cyan" cx="340" cy="160" r="12" style="--d:0.05s" />
+            <circle id="scene5-node-10" class="node node--violet" cx="160" cy="470" r="13" style="--d:0.2s" />
+            <circle id="scene5-node-11" class="node node--amber" cx="440" cy="680" r="12" style="--d:0.35s" />
+            <circle id="scene5-node-12" class="node node--emerald" cx="1080" cy="150" r="13" style="--d:0.5s" />
+            <circle id="scene5-node-13" class="node node--blue" cx="1320" cy="610" r="14" style="--d:0.65s" />
+            <circle id="scene5-node-14" class="node node--cyan" cx="1260" cy="320" r="12" style="--d:0.8s" />
+          </g>
+        </g>
+      </g>
+
+      <text id="scene5-title" class="scene-title scene-title--sm" x="230" y="120" text-anchor="start">Your knowledge graph grows.</text>
+
+      <g id="scene5-counter" class="enter-fade" style="--d:0.4s">
+        <text id="scene5-counter-value" class="counter-value" x="1400" y="130" text-anchor="end" data-counter-to="128" data-counter-suffix="">0</text>
+        <text id="scene5-counter-label" class="counter-label" x="1400" y="160" text-anchor="end">knowledge items organized</text>
+      </g>
+    </svg>
+
+    <!-- ============================= SCENE 6 — INSIGHTS EMERGE ============================= -->
+    <svg class="scene" id="scene-6" data-scene-index="5" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <g class="scene-camera" id="scene6-camera">
+
+        <g id="scene6-card-1" class="insight-card" style="--d:0.05s">
+          <rect class="card-bg" x="110" y="330" width="380" height="300" rx="24" />
+          <rect class="card-edge" x="110" y="330" width="380" height="300" rx="24" />
+          <path id="scene6-icon-trend" class="card-icon" data-draw="true" style="--d:0.35s" d="M136,556 L210,486 L256,528 L340,414 M340,414 L302,412 M340,414 L338,452" />
+          <polyline id="scene6-sparkline" class="sparkline" data-draw="true" style="--d:0.6s" points="136,600 176,588 216,596 256,566 296,578 336,540 376,552" />
+          <text class="card-value" x="136" y="482" data-counter-to="42" data-counter-suffix="%">0%</text>
+          <text class="card-label" x="136" y="512">Faster decisions on average</text>
+        </g>
+
+        <g id="scene6-card-2" class="insight-card" style="--d:0.25s">
+          <rect class="card-bg" x="610" y="300" width="380" height="340" rx="24" />
+          <rect class="card-edge" x="610" y="300" width="380" height="340" rx="24" />
+          <g id="scene6-icon-link" class="card-icon">
+            <rect x="656" y="440" width="72" height="40" rx="20" fill="none" />
+            <rect x="700" y="440" width="72" height="40" rx="20" fill="none" />
+          </g>
+          <text class="card-value" x="636" y="522" data-counter-to="12" data-counter-suffix="">0</text>
+          <text class="card-label" x="636" y="552">Duplicate discussions surfaced</text>
+        </g>
+
+        <g id="scene6-card-3" class="insight-card" style="--d:0.45s">
+          <rect class="card-bg" x="1110" y="330" width="380" height="300" rx="24" />
+          <rect class="card-edge" x="1110" y="330" width="380" height="300" rx="24" />
+          <path id="scene6-icon-spark" class="card-icon" d="M1174,438 L1184,466 L1212,476 L1184,486 L1174,514 L1164,486 L1136,476 L1164,466 Z" />
+          <text class="card-value" x="1136" y="530" data-counter-to="3" data-counter-suffix="">0</text>
+          <text class="card-label" x="1136" y="560">New collaboration opportunities</text>
+        </g>
+      </g>
+
+      <text id="scene6-title" class="scene-title" x="800" y="200" text-anchor="middle">Insights, not noise.</text>
+    </svg>
+
+    <!-- ============================= SCENE 7 — BETTER COLLABORATION ============================= -->
+    <svg class="scene" id="scene-7" data-scene-index="6" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <g class="scene-camera" id="scene7-camera">
+        <g id="scene7-edges">
+          <path id="scene7-edge-1" class="team-edge" data-draw="true" style="--d:0.05s" d="M800,220 L1030,360" />
+          <path id="scene7-edge-2" class="team-edge" data-draw="true" style="--d:0.15s" d="M1030,360 L976,620" />
+          <path id="scene7-edge-3" class="team-edge" data-draw="true" style="--d:0.25s" d="M976,620 L624,620" />
+          <path id="scene7-edge-4" class="team-edge" data-draw="true" style="--d:0.35s" d="M624,620 L570,360" />
+          <path id="scene7-edge-5" class="team-edge" data-draw="true" style="--d:0.45s" d="M570,360 L800,220" />
+          <path id="scene7-spoke-1" class="team-spoke" data-draw="true" style="--d:0.55s" d="M800,220 L800,470" />
+          <path id="scene7-spoke-2" class="team-spoke" data-draw="true" style="--d:0.65s" d="M1030,360 L800,470" />
+          <path id="scene7-spoke-3" class="team-spoke" data-draw="true" style="--d:0.75s" d="M976,620 L800,470" />
+          <path id="scene7-spoke-4" class="team-spoke" data-draw="true" style="--d:0.85s" d="M624,620 L800,470" />
+          <path id="scene7-spoke-5" class="team-spoke" data-draw="true" style="--d:0.95s" d="M570,360 L800,470" />
+        </g>
+
+        <g id="scene7-sync-pulse">
+          <circle class="sync-ring" cx="800" cy="470" r="30" />
+          <circle class="sync-ring sync-ring--delay" cx="800" cy="470" r="30" />
+          <circle class="sync-core" cx="800" cy="470" r="10" />
+        </g>
+
+        <g id="scene7-people" class="enter-stagger">
+          <g id="scene7-person-1" class="person" style="--d:0s" transform="translate(800,220)">
+            <path class="person-shoulder" d="M-22,26 A22,20 0 0 1 22,26" />
+            <circle class="person-head" cx="0" cy="-6" r="13" />
+          </g>
+          <g id="scene7-person-2" class="person" style="--d:0.15s" transform="translate(1030,360)">
+            <path class="person-shoulder" d="M-22,26 A22,20 0 0 1 22,26" />
+            <circle class="person-head" cx="0" cy="-6" r="13" />
+          </g>
+          <g id="scene7-person-3" class="person" style="--d:0.3s" transform="translate(976,620)">
+            <path class="person-shoulder" d="M-22,26 A22,20 0 0 1 22,26" />
+            <circle class="person-head" cx="0" cy="-6" r="13" />
+          </g>
+          <g id="scene7-person-4" class="person" style="--d:0.45s" transform="translate(624,620)">
+            <path class="person-shoulder" d="M-22,26 A22,20 0 0 1 22,26" />
+            <circle class="person-head" cx="0" cy="-6" r="13" />
+          </g>
+          <g id="scene7-person-5" class="person" style="--d:0.6s" transform="translate(570,360)">
+            <path class="person-shoulder" d="M-22,26 A22,20 0 0 1 22,26" />
+            <circle class="person-head" cx="0" cy="-6" r="13" />
+          </g>
+        </g>
+      </g>
+
+      <text id="scene7-title" class="scene-title" x="800" y="130" text-anchor="middle">Teams move faster, together.</text>
+      <text id="scene7-subtitle" class="scene-subtitle" x="800" y="800" text-anchor="middle">Everyone sees what everyone knows.</text>
+    </svg>
+
+    <!-- ============================= SCENE 8 — COLLAINSIGHT ============================= -->
+    <svg class="scene" id="scene-8" data-scene-index="7" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <g class="scene-camera" id="scene8-camera">
+        <g id="scene8-logo-lockup" transform="translate(250,344) scale(0.934)">
+
+          <path id="scene8-mark-stroke" data-draw="true" class="logo-mark-stroke"
+            fill-rule="evenodd" clip-rule="evenodd"
+            d="M94.7217 63.4856C86.4797 60.0919 77.389 58.395 67.4501 58.395C54.7239 58.3951 43.2096 61.2431 32.9074 66.9395C22.6049 72.515 14.5441 80.2733 8.7262 90.2121C2.90846 100.03 0 111.12 0 123.483C4.92979e-05 135.846 2.90836 146.997 8.7262 156.935C14.544 166.753 22.5433 174.51 32.7243 180.207C43.0267 185.782 54.5419 188.571 67.2684 188.571C77.2072 188.571 86.2981 186.874 94.54 183.48C102.903 180.087 109.993 175.117 115.811 168.572L103.994 157.117C94.2981 167.298 82.3591 172.389 68.1783 172.389C58.7243 172.389 50.1781 170.269 42.5421 166.026C34.9063 161.784 28.9066 155.966 24.5432 148.573C20.301 141.058 18.1807 132.694 18.1806 123.483C18.1806 114.271 20.3011 105.968 24.5432 98.5749C28.9065 91.0603 34.9063 85.1816 42.5421 80.9394C50.1781 76.6972 58.7243 74.5754 68.1783 74.5754C82.4803 74.5756 94.4193 79.6057 103.994 89.6656L115.811 78.2124C109.993 71.6673 102.964 66.7582 94.7217 63.4856ZM58.6227 66.2668C58.623 63.0112 61.3841 60.3718 64.7897 60.3716C68.1954 60.3716 70.9563 63.0111 70.9567 66.2668C70.9567 66.2766 70.9565 66.2864 70.9562 66.2963L70.9552 66.3222C70.9547 66.3361 70.9541 66.3501 70.9539 66.3639L97.1769 74.5491C98.1662 72.5563 100.291 71.1785 102.752 71.1785C106.157 71.1785 108.918 73.8178 108.919 77.0736C108.919 80.3295 106.157 82.9687 102.752 82.9687C99.3457 82.9687 96.5846 80.3296 96.5846 77.0736C96.5846 76.7627 96.6096 76.4574 96.6581 76.1595L70.6682 68.0478C69.8783 70.4332 67.5462 72.1633 64.7897 72.1633C62.1384 72.1632 59.8783 70.563 59.0069 68.3183L29.0513 80.0669C30.1314 81.1288 30.7975 82.5775 30.7976 84.1755C30.7976 87.4314 28.0365 90.0706 24.6306 90.0707C23.5286 90.0707 22.4951 89.7932 21.5998 89.3091L9.23664 118.954C12.4398 119.167 14.9693 121.716 14.9695 124.833C14.9695 127.862 12.5796 130.354 9.50435 130.687L26.9498 163.036C27.9169 162.433 29.0717 162.083 30.3121 162.083C33.7179 162.083 36.479 164.722 36.4791 167.978C36.4791 169.162 36.1119 170.264 35.4832 171.188L59.8558 179.263C60.5493 176.733 62.9574 174.866 65.8217 174.866C68.9213 174.866 71.4858 177.053 71.9221 179.9L97.1519 171.872C96.7879 171.12 96.5846 170.282 96.5846 169.398C96.5848 166.143 99.3458 163.503 102.752 163.503C106.157 163.503 108.918 166.143 108.919 169.398C108.919 172.654 106.157 175.294 102.752 175.294C100.916 175.294 99.2679 174.527 98.1381 173.31L71.9179 181.653C71.4684 184.486 68.9105 186.657 65.8217 186.657C62.4876 186.657 59.7732 184.128 59.6602 180.967L34.2209 172.537C33.1569 173.372 31.796 173.873 30.3121 173.873C26.9062 173.873 24.1451 171.234 24.1451 167.978C24.1452 166.529 24.6924 165.201 25.6002 164.175L7.54023 130.685C7.52953 130.665 7.51755 130.632 7.50999 130.611C7.50856 130.611 7.50491 130.6 7.50417 130.596C4.7218 130.026 2.63547 127.663 2.63547 124.833C2.63562 122.015 4.70306 119.66 7.46672 119.076C7.44368 118.932 7.45689 118.779 7.51804 118.632L20.1836 88.2577C19.1192 87.1983 18.4636 85.7605 18.4636 84.1755C18.4637 80.9197 21.2248 78.2804 24.6306 78.2804C25.631 78.2804 26.5748 78.5101 27.4103 78.9143L58.6379 66.6676C58.6286 66.5354 58.6227 66.4013 58.6227 66.2668Z"
+            fill="none" stroke="#e8ecf8" stroke-width="1.6" />
+
+          <g id="scene8-logo-fill">
+            <path id="scene8-mark-fill" class="logo-fill logo-fill--mark"
+              fill-rule="evenodd" clip-rule="evenodd"
+              d="M94.7217 63.4856C86.4797 60.0919 77.389 58.395 67.4501 58.395C54.7239 58.3951 43.2096 61.2431 32.9074 66.9395C22.6049 72.515 14.5441 80.2733 8.7262 90.2121C2.90846 100.03 0 111.12 0 123.483C4.92979e-05 135.846 2.90836 146.997 8.7262 156.935C14.544 166.753 22.5433 174.51 32.7243 180.207C43.0267 185.782 54.5419 188.571 67.2684 188.571C77.2072 188.571 86.2981 186.874 94.54 183.48C102.903 180.087 109.993 175.117 115.811 168.572L103.994 157.117C94.2981 167.298 82.3591 172.389 68.1783 172.389C58.7243 172.389 50.1781 170.269 42.5421 166.026C34.9063 161.784 28.9066 155.966 24.5432 148.573C20.301 141.058 18.1807 132.694 18.1806 123.483C18.1806 114.271 20.3011 105.968 24.5432 98.5749C28.9065 91.0603 34.9063 85.1816 42.5421 80.9394C50.1781 76.6972 58.7243 74.5754 68.1783 74.5754C82.4803 74.5756 94.4193 79.6057 103.994 89.6656L115.811 78.2124C109.993 71.6673 102.964 66.7582 94.7217 63.4856ZM58.6227 66.2668C58.623 63.0112 61.3841 60.3718 64.7897 60.3716C68.1954 60.3716 70.9563 63.0111 70.9567 66.2668C70.9567 66.2766 70.9565 66.2864 70.9562 66.2963L70.9552 66.3222C70.9547 66.3361 70.9541 66.3501 70.9539 66.3639L97.1769 74.5491C98.1662 72.5563 100.291 71.1785 102.752 71.1785C106.157 71.1785 108.918 73.8178 108.919 77.0736C108.919 80.3295 106.157 82.9687 102.752 82.9687C99.3457 82.9687 96.5846 80.3296 96.5846 77.0736C96.5846 76.7627 96.6096 76.4574 96.6581 76.1595L70.6682 68.0478C69.8783 70.4332 67.5462 72.1633 64.7897 72.1633C62.1384 72.1632 59.8783 70.563 59.0069 68.3183L29.0513 80.0669C30.1314 81.1288 30.7975 82.5775 30.7976 84.1755C30.7976 87.4314 28.0365 90.0706 24.6306 90.0707C23.5286 90.0707 22.4951 89.7932 21.5998 89.3091L9.23664 118.954C12.4398 119.167 14.9693 121.716 14.9695 124.833C14.9695 127.862 12.5796 130.354 9.50435 130.687L26.9498 163.036C27.9169 162.433 29.0717 162.083 30.3121 162.083C33.7179 162.083 36.479 164.722 36.4791 167.978C36.4791 169.162 36.1119 170.264 35.4832 171.188L59.8558 179.263C60.5493 176.733 62.9574 174.866 65.8217 174.866C68.9213 174.866 71.4858 177.053 71.9221 179.9L97.1519 171.872C96.7879 171.12 96.5846 170.282 96.5846 169.398C96.5848 166.143 99.3458 163.503 102.752 163.503C106.157 163.503 108.918 166.143 108.919 169.398C108.919 172.654 106.157 175.294 102.752 175.294C100.916 175.294 99.2679 174.527 98.1381 173.31L71.9179 181.653C71.4684 184.486 68.9105 186.657 65.8217 186.657C62.4876 186.657 59.7732 184.128 59.6602 180.967L34.2209 172.537C33.1569 173.372 31.796 173.873 30.3121 173.873C26.9062 173.873 24.1451 171.234 24.1451 167.978C24.1452 166.529 24.6924 165.201 25.6002 164.175L7.54023 130.685C7.52953 130.665 7.51755 130.632 7.50999 130.611C7.50856 130.611 7.50491 130.6 7.50417 130.596C4.7218 130.026 2.63547 127.663 2.63547 124.833C2.63562 122.015 4.70306 119.66 7.46672 119.076C7.44368 118.932 7.45689 118.779 7.51804 118.632L20.1836 88.2577C19.1192 87.1983 18.4636 85.7605 18.4636 84.1755C18.4637 80.9197 21.2248 78.2804 24.6306 78.2804C25.631 78.2804 26.5748 78.5101 27.4103 78.9143L58.6379 66.6676C58.6286 66.5354 58.6227 66.4013 58.6227 66.2668Z"
+              fill="url(#grad-brand)" />
+
+            <path id="scene8-wordmark-fill" class="logo-fill logo-fill--wordmark"
+              d="M179.095 187.017C169.665 187.017 161.189 184.928 153.668 180.75C146.147 176.572 140.238 170.842 135.941 163.56C131.763 156.158 129.674 147.802 129.674 138.491C129.674 129.179 131.763 120.883 135.941 113.601C140.238 106.199 146.147 100.469 153.668 96.4106C161.189 92.2324 169.665 90.1433 179.095 90.1433C188.526 90.1433 196.942 92.2324 204.343 96.4106C211.864 100.469 217.714 106.199 221.892 113.601C226.189 120.883 228.338 129.179 228.338 138.491C228.338 147.802 226.189 156.158 221.892 163.56C217.714 170.842 211.864 176.572 204.343 180.75C196.942 184.928 188.526 187.017 179.095 187.017ZM179.095 171.976C185.184 171.976 190.615 170.603 195.39 167.857C200.285 164.992 204.105 161.053 206.85 156.039C209.596 150.906 210.969 145.056 210.969 138.491C210.969 131.925 209.596 126.135 206.85 121.121C204.105 115.988 200.285 112.049 195.39 109.303C190.615 106.558 185.184 105.185 179.095 105.185C173.007 105.185 167.516 106.558 162.621 109.303C157.846 112.049 154.026 115.988 151.161 121.121C148.416 126.135 147.043 131.925 147.043 138.491C147.043 145.056 148.416 150.906 151.161 156.039C154.026 161.053 157.846 164.992 162.621 167.857C167.516 170.603 173.007 171.976 179.095 171.976ZM280.941 187.017C271.749 187.017 264.646 184.51 259.632 179.497C254.619 174.363 252.112 167.201 252.112 158.009V53.0769H269.302V156.576C269.302 161.709 270.496 165.649 272.883 168.395C275.39 171.14 279.091 172.513 283.985 172.513C286.97 172.513 289.775 171.916 292.401 170.722L293.297 184.868C289.357 186.301 285.239 187.017 280.941 187.017ZM338.473 187.017C329.281 187.017 322.178 184.51 317.164 179.497C312.15 174.363 309.643 167.201 309.643 158.009V53.0769H326.833V156.576C326.833 161.709 328.027 165.649 330.415 168.395C332.922 171.14 336.622 172.513 341.517 172.513C344.501 172.513 347.307 171.916 349.933 170.722L350.828 184.868C346.889 186.301 342.77 187.017 338.473 187.017ZM454.958 91.0386V185.943H438.484V170.901C434.664 176.154 429.83 180.153 423.98 182.899C418.131 185.644 411.684 187.017 404.641 187.017C395.449 187.017 387.212 184.988 379.93 180.929C372.648 176.87 366.918 171.2 362.74 163.918C358.681 156.517 356.652 148.041 356.652 138.491C356.652 128.941 358.681 120.525 362.74 113.243C366.918 105.961 372.648 100.29 379.93 96.2315C387.212 92.1727 395.449 90.1433 404.641 90.1433C411.446 90.1433 417.713 91.4564 423.443 94.0827C429.173 96.5896 433.948 100.35 437.768 105.364V91.0386H454.958ZM406.074 171.976C412.043 171.976 417.474 170.603 422.369 167.857C427.263 164.992 431.083 161.053 433.829 156.039C436.574 150.906 437.947 145.056 437.947 138.491C437.947 131.925 436.574 126.135 433.829 121.121C431.083 115.988 427.263 112.049 422.369 109.303C417.474 106.558 412.043 105.185 406.074 105.185C399.986 105.185 394.494 106.558 389.6 109.303C384.825 112.049 381.005 115.988 378.14 121.121C375.394 126.135 374.021 131.925 374.021 138.491C374.021 145.056 375.394 150.906 378.14 156.039C381.005 161.053 384.825 164.992 389.6 167.857C394.494 170.603 399.986 171.976 406.074 171.976ZM529.027 83.876V162.664H550.694V185.943H478.172V162.664H500.018V83.876H478.172V60.5976H550.694V83.876H529.027ZM629.195 88.1736C641.133 88.1736 650.743 91.7549 658.025 98.9175C665.426 106.08 669.127 116.705 669.127 130.791V185.943H641.193V135.089C641.193 127.448 639.521 121.778 636.179 118.077C632.836 114.257 628.002 112.347 621.675 112.347C614.631 112.347 609.021 114.556 604.843 118.973C600.664 123.27 598.575 129.717 598.575 138.312V185.943H570.641V89.6061H597.322V100.887C601.022 96.8284 605.618 93.7246 611.11 91.5758C616.601 89.3077 622.63 88.1736 629.195 88.1736ZM726.858 187.375C718.86 187.375 711.041 186.42 703.401 184.51C695.761 182.481 689.672 179.974 685.136 176.99L694.448 156.934C698.745 159.68 703.938 161.948 710.026 163.739C716.114 165.41 722.083 166.246 727.933 166.246C739.751 166.246 745.66 163.321 745.66 157.472C745.66 154.726 744.048 152.756 740.825 151.562C737.602 150.369 732.648 149.354 725.963 148.518C718.084 147.325 711.578 145.952 706.445 144.4C701.312 142.848 696.835 140.102 693.015 136.163C689.314 132.223 687.464 126.613 687.464 119.331C687.464 113.243 689.195 107.871 692.657 103.215C696.238 98.44 701.371 94.7393 708.056 92.113C714.861 89.4867 722.859 88.1736 732.051 88.1736C738.856 88.1736 745.6 88.9495 752.285 90.5014C759.09 91.9339 764.701 93.9633 769.117 96.5896L759.806 116.466C751.33 111.691 742.079 109.303 732.051 109.303C726.082 109.303 721.606 110.139 718.621 111.81C715.637 113.481 714.145 115.63 714.145 118.256C714.145 121.241 715.756 123.33 718.979 124.524C722.203 125.717 727.336 126.852 734.379 127.926C742.258 129.239 748.704 130.672 753.718 132.223C758.732 133.656 763.089 136.342 766.79 140.281C770.49 144.221 772.341 149.712 772.341 156.755C772.341 162.724 770.55 168.036 766.969 172.692C763.387 177.348 758.135 180.989 751.211 183.615C744.407 186.122 736.289 187.375 726.858 187.375ZM789.576 89.6061H817.51V185.943H789.576V89.6061ZM803.543 76.1763C798.409 76.1763 794.231 74.684 791.008 71.6996C787.785 68.7152 786.173 65.0146 786.173 60.5976C786.173 56.1807 787.785 52.48 791.008 49.4956C794.231 46.5112 798.409 45.019 803.543 45.019C808.676 45.019 812.854 46.4515 816.077 49.3166C819.3 52.1816 820.912 55.7629 820.912 60.0604C820.912 64.7161 819.3 68.5959 816.077 71.6996C812.854 74.684 808.676 76.1763 803.543 76.1763ZM942.816 89.6061V169.827C942.816 187.495 938.22 200.626 929.028 209.221C919.836 217.816 906.406 222.114 888.738 222.114C879.427 222.114 870.593 220.98 862.237 218.712C853.88 216.444 846.956 213.161 841.465 208.863L852.567 188.808C856.626 192.15 861.759 194.777 867.967 196.687C874.174 198.716 880.382 199.731 886.589 199.731C896.259 199.731 903.362 197.522 907.898 193.105C912.554 188.808 914.882 182.242 914.882 173.408V169.29C907.6 177.288 897.453 181.287 884.441 181.287C875.607 181.287 867.489 179.377 860.088 175.557C852.806 171.618 847.016 166.126 842.719 159.083C838.421 152.04 836.272 143.922 836.272 134.73C836.272 125.538 838.421 117.421 842.719 110.378C847.016 103.334 852.806 97.9028 860.088 94.0827C867.489 90.1433 875.607 88.1736 884.441 88.1736C898.408 88.1736 909.032 92.7696 916.314 101.962V89.6061H942.816ZM889.992 158.367C897.393 158.367 903.422 156.218 908.077 151.921C912.852 147.504 915.24 141.774 915.24 134.73C915.24 127.687 912.852 122.017 908.077 117.719C903.422 113.302 897.393 111.094 889.992 111.094C882.59 111.094 876.502 113.302 871.727 117.719C866.952 122.017 864.565 127.687 864.565 134.73C864.565 141.774 866.952 147.504 871.727 151.921C876.502 156.218 882.59 158.367 889.992 158.367ZM1027.37 88.1736C1039.31 88.1736 1048.92 91.7549 1056.2 98.9175C1063.6 106.08 1067.3 116.705 1067.3 130.791V185.943H1039.37V135.089C1039.37 127.448 1037.7 121.778 1034.35 118.077C1031.01 114.257 1026.18 112.347 1019.85 112.347C1012.81 112.347 1007.19 114.556 1003.02 118.973C998.838 123.27 996.749 129.717 996.749 138.312V185.943H968.815V53.0769H996.749V99.6337C1000.45 95.9331 1004.93 93.1277 1010.18 91.2177C1015.43 89.1883 1021.16 88.1736 1027.37 88.1736ZM1150.64 181.287C1147.89 183.317 1144.49 184.868 1140.43 185.943C1136.49 186.898 1132.37 187.375 1128.08 187.375C1116.5 187.375 1107.6 184.451 1101.4 178.601C1095.19 172.752 1092.08 164.157 1092.08 152.816V68.2974H1120.02V91.7549H1143.83V113.243H1120.02V152.458C1120.02 156.517 1121.03 159.68 1123.06 161.948C1125.09 164.097 1128.02 165.171 1131.84 165.171C1136.13 165.171 1139.95 163.978 1143.3 161.59L1150.64 181.287Z"
+              fill="#f5f7ff" />
+
+            <g id="scene8-graph-accent" class="logo-fill logo-fill--sparkle">
+              <path id="scene8-accent-edge" d="M775.287 32.7421L823.477 21.5284L843.685 67.4272" fill="none" stroke="url(#grad-brand)" stroke-width="3.87164" />
+              <circle id="scene8-accent-node-1" cx="772.481" cy="32.5139" r="8.22724" fill="url(#grad-brand)" />
+              <circle id="scene8-accent-node-2" cx="822.264" cy="21.0778" r="8.22724" fill="url(#grad-brand)" />
+              <circle id="scene8-accent-node-3" cx="843.564" cy="67.3532" r="8.22724" fill="url(#grad-brand)" />
+            </g>
+          </g>
+        </g>
+
+        <text id="scene8-tagline" class="tagline" x="800" y="640" text-anchor="middle">Turn conversations into structured knowledge.</text>
+      </g>
+    </svg>
+
+  </div>
+
+  <!-- ============================= HUD: progress / seek / replay ============================= -->
+  <div class="hud" id="hud">
+    <div class="progress-track" id="progress-track" aria-hidden="true">
+      <div class="progress-fill" id="progress-fill"></div>
+    </div>
+    <div class="scene-dots" id="scene-dots" role="tablist" aria-label="Jump to scene"></div>
+    <button class="replay-btn" id="replay-btn" type="button" aria-label="Replay animation">
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+        <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" fill="currentColor"/>
+      </svg>
+      Replay
+    </button>
+  </div>
+
+</main>
+
+<script src="script.js"></script>
+</body>
+</html>
