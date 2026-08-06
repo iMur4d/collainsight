@@ -90,14 +90,22 @@ illustrations, or emoji.
 | Insight card icons | `assets/svg/icon-trend.svg`, `icon-link.svg`, `icon-spark.svg` | Original geometric marks — ascending arrow, interlocking capsules, four-point spark |
 | Person nodes | `assets/svg/person-node.svg`, `scene7-person-*` | Circle + arc abstraction, not a stock avatar |
 | Brand mark & wordmark | `scene8-mark-stroke/fill`, `scene8-wordmark-fill`, `assets/svg/logo-mark.svg` | Exact path data from `assests/CollaInsight full logo - white.svg` — draws in via stroke, then fills with the brand gradient |
-| Brand graph accent | `scene8-graph-accent` (`-accent-edge`, `-accent-node-1/2/3`), `assets/svg/logo-accent-graph.svg` | The current brand mark's three connected nodes — pops in last as a flourish next to the wordmark |
+| Brand graph accent | `scene8-graph-accent` (`-accent-edge-1/2/3`, `-accent-node-1/2/3`), `assets/svg/logo-accent-graph.svg` | Three connected nodes, pops in last next to the wordmark — see note below |
 
-> **Logo source of truth:** the mark, wordmark, and accent above are copied
-> exactly from `assests/CollaInsight full logo - white.svg` as it exists on
-> disk right now. If that file changes again, re-sync `scene8-mark-stroke`,
-> `scene8-mark-fill`, `scene8-wordmark-fill`, and `scene8-graph-accent` in
-> `index.html` (and the matching files under `assets/svg/`) from it — don't
-> hand-edit the path data.
+> **Logo source of truth:** the mark and wordmark are copied exactly from
+> `assests/CollaInsight full logo - white.svg` as it exists on disk right
+> now. If that file changes again, re-sync `scene8-mark-stroke`,
+> `scene8-mark-fill`, and `scene8-wordmark-fill` in `index.html` (and
+> `assets/svg/logo-mark.svg`) from it — don't hand-edit the path data.
+>
+> The graph accent (`scene8-graph-accent`) is the one exception: the brand
+> file draws its three nodes as a tight two-segment zigzag which, at the
+> scale this animation renders it, reads as a single spark rather than
+> three distinct nodes. The accent here keeps the same three-nodes-plus-
+> gradient concept but spreads them into a wider triangle with all three
+> edges drawn, so it reads clearly as a small network glyph. This is a
+> deliberate animation-only reinterpretation, not a literal copy — see the
+> comment in `assets/svg/logo-accent-graph.svg` for the exact reasoning.
 
 ## Folder structure
 
@@ -109,7 +117,7 @@ explainer-animation/
 ├── assets/
 │   └── svg/
 │       ├── logo-mark.svg          # real brand icon, standalone/editable
-│       ├── logo-accent-graph.svg  # real brand accent (3-node graph), standalone/editable
+│       ├── logo-accent-graph.svg  # 3-node graph accent, spread for legibility (see note above)
 │       ├── icon-trend.svg
 │       ├── icon-link.svg
 │       ├── icon-spark.svg

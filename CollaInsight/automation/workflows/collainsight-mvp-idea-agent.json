@@ -1,0 +1,400 @@
+{
+  "id": "cI-mvp-idea-agent-0001",
+  "name": "CollaInsight - MVP - Idea Agent (Command Router)",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# CollaInsight — MVP Orchestration Workflow\n\n**n8n is the orchestration layer only. All intelligence lives in the Python backend (LangGraph agents).**\n\n```\nTelegram → n8n → Python Backend (LangGraph Agent) → Supabase → n8n → Telegram Reply\n```\n\nThis workflow:\n1. Receives every Telegram message.\n2. Keeps only slash-command messages (`/idea`, `/question`, ...) — the command IS the classification, no AI guessing here.\n3. Routes by command with a Switch node.\n4. `/idea` is the only command wired to real logic for the MVP — it calls the backend's `POST /api/idea` and relays the JSON reply back to Telegram.\n5. The other five commands (`/question`, `/suggestion`, `/decision`, `/action`, `/observation`) end at a **placeholder node** so the full six-agent architecture is visible on canvas during the presentation, even though only one agent is implemented.\n\nAdding a new agent later = swap its placeholder NoOp node for an HTTP Request node pointed at its own backend endpoint. No restructuring of this workflow required.",
+        "height": 340,
+        "width": 1080,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-40, -420],
+      "id": "c011a000-0000-4000-8000-000000000001",
+      "name": "Sticky - Architecture Overview"
+    },
+    {
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.5,
+      "position": [0, 0],
+      "id": "c011a000-0000-4000-8000-000000000002",
+      "name": "Telegram Trigger",
+      "webhookId": "b3f6d8c1-4e3b-4f7a-9c15-7b8e2d1a6f94",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "🔧 REPLACE ME — Telegram Bot Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "1a2b3c4d-0001-4000-8000-000000000001",
+              "leftValue": "={{ $json.message.text }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "1a2b3c4d-0001-4000-8000-000000000002",
+              "leftValue": "={{ $json.message.text }}",
+              "rightValue": "/",
+              "operator": {
+                "type": "string",
+                "operation": "startsWith"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [260, 0],
+      "id": "c011a000-0000-4000-8000-000000000003",
+      "name": "Is Command"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const msg = $json.message;\nconst text = (msg && msg.text || '').trim();\nconst parts = text.split(/\\s+/);\nconst command = (parts[0] || '').toLowerCase();\nconst content = parts.slice(1).join(' ').trim();\nconst from = msg.from || {};\n\nreturn {\n  json: {\n    command,\n    idea_text: content,\n    // Display-only attribution (matches 07_DATABASE_SCHEMA.md's MVP scope note:\n    // Telegram participants are identified by raw username/first name, not a\n    // persistent account ID - no account linking exists in the MVP).\n    telegram_display_name: from.username || from.first_name || 'unknown',\n    chat_id: msg.chat.id,\n    // Group name, not personal data - only present for groups/supergroups,\n    // not private chats (msg.chat.title is undefined there).\n    chat_title: msg.chat.title || null,\n    message_id: msg.message_id\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [520, 0],
+      "id": "c011a000-0000-4000-8000-000000000004",
+      "name": "Parse Command"
+    },
+    {
+      "parameters": {
+        "content": "**Command Router**\nSwitch on `$json.command`. Only `/idea` is wired to a real branch. The other five outputs go straight to placeholder nodes below — no AI or logic runs for them in the MVP.",
+        "height": 160,
+        "width": 500,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [780, -220],
+      "id": "c011a000-0000-4000-8000-000000000005",
+      "name": "Sticky - Router Explanation"
+    },
+    {
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+                "conditions": [
+                  { "id": "2a2b3c4d-0002-4000-8000-000000000001", "leftValue": "={{ $json.command }}", "rightValue": "/idea", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "idea"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+                "conditions": [
+                  { "id": "2a2b3c4d-0002-4000-8000-000000000002", "leftValue": "={{ $json.command }}", "rightValue": "/question", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "question"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+                "conditions": [
+                  { "id": "2a2b3c4d-0002-4000-8000-000000000003", "leftValue": "={{ $json.command }}", "rightValue": "/suggestion", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "suggestion"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+                "conditions": [
+                  { "id": "2a2b3c4d-0002-4000-8000-000000000004", "leftValue": "={{ $json.command }}", "rightValue": "/decision", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "decision"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+                "conditions": [
+                  { "id": "2a2b3c4d-0002-4000-8000-000000000005", "leftValue": "={{ $json.command }}", "rightValue": "/action", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "action"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+                "conditions": [
+                  { "id": "2a2b3c4d-0002-4000-8000-000000000006", "leftValue": "={{ $json.command }}", "rightValue": "/observation", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "observation"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "unknown"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [780, 0],
+      "id": "c011a000-0000-4000-8000-000000000006",
+      "name": "Command Router"
+    },
+    {
+      "parameters": {
+        "content": "**IDEA AGENT — Implemented for MVP**\nValidates content → calls Python backend `POST /api/idea` → relays the structured JSON reply to Telegram.\n\nAll extraction/dedup/save logic runs in the backend (LangGraph). This branch never touches AI directly.",
+        "height": 160,
+        "width": 780,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1300, -220],
+      "id": "c011a000-0000-4000-8000-000000000007",
+      "name": "Sticky - Idea Branch Explanation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            { "id": "3a2b3c4d-0003-4000-8000-000000000001", "leftValue": "={{ $json.idea_text }}", "rightValue": "", "operator": { "type": "string", "operation": "notEmpty", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1040, 0],
+      "id": "c011a000-0000-4000-8000-000000000008",
+      "name": "Validate Idea Content"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://YOUR_BACKEND_URL:8000/api/idea",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telegram_display_name: $json.telegram_display_name, chat_id: $json.chat_id, chat_title: $json.chat_title, message_id: $json.message_id, idea_text: $json.idea_text }) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "X-API-Key", "value": "REPLACE_WITH_BACKEND_API_KEY" }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1300, 0],
+      "id": "c011a000-0000-4000-8000-000000000009",
+      "name": "Call Idea Agent (POST /api/idea)"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const res = $json;\nconst isNew = res.status === 'saved';\nconst text = isNew\n  ? `✅ Idea saved!\\n📌 ${res.title}\\n${res.summary}`\n  : `ℹ️ ${res.title || 'This looks similar to an existing idea'}\\n${res.summary || 'A similar idea already exists — nothing new was saved.'}`;\n\nreturn { json: { reply_text: text, status: res.status, similar_found: res.similar_found } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 0],
+      "id": "c011a000-0000-4000-8000-00000000000a",
+      "name": "Format Idea Reply"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Command').item.json.chat_id }}",
+        "text": "={{ $json.reply_text }}",
+        "additionalFields": { "appendAttribution": false }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1820, 0],
+      "id": "c011a000-0000-4000-8000-00000000000b",
+      "name": "Reply - Idea Saved",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "🔧 REPLACE ME — Telegram Bot Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "⚠️ Please include your idea after the /idea command.\nExample: /idea Add a peer mentorship matching feature",
+        "additionalFields": { "appendAttribution": false }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1300, 220],
+      "id": "c011a000-0000-4000-8000-00000000000c",
+      "name": "Reply - Missing Idea Text",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "🔧 REPLACE ME — Telegram Bot Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "**FUTURE AGENTS — placeholders only**\n\nEach node here is a dead end (`NoOp`) so the six-agent architecture reads clearly on canvas, but nothing executes.\n\n**To activate an agent later:** delete its NoOp node and wire the Switch output straight into a new `HTTP Request` node calling that agent's backend endpoint (e.g. `POST /api/question`), then a reply node — same shape as the Idea branch. No other part of this workflow changes.",
+        "height": 900,
+        "width": 620,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1640, 340],
+      "id": "c011a000-0000-4000-8000-00000000000d",
+      "name": "Sticky - Future Agents Explanation"
+    },
+    {
+      "parameters": { "notes": "Future Agent", "notesInFlow": true },
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1040, 400],
+      "id": "c011a000-0000-4000-8000-00000000000e",
+      "name": "Question Agent (Future)"
+    },
+    {
+      "parameters": { "notes": "Future Agent", "notesInFlow": true },
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1040, 580],
+      "id": "c011a000-0000-4000-8000-00000000000f",
+      "name": "Suggestion Agent (Future)"
+    },
+    {
+      "parameters": { "notes": "Future Agent", "notesInFlow": true },
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1040, 760],
+      "id": "c011a000-0000-4000-8000-000000000010",
+      "name": "Decision Agent (Future)"
+    },
+    {
+      "parameters": { "notes": "Future Agent", "notesInFlow": true },
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1040, 940],
+      "id": "c011a000-0000-4000-8000-000000000011",
+      "name": "Action Agent (Future)"
+    },
+    {
+      "parameters": { "notes": "Future Agent", "notesInFlow": true },
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1040, 1120],
+      "id": "c011a000-0000-4000-8000-000000000012",
+      "name": "Observation Agent (Future)"
+    },
+    {
+      "parameters": { "notes": "Unrecognized command — ignored", "notesInFlow": true },
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1040, 1300],
+      "id": "c011a000-0000-4000-8000-000000000013",
+      "name": "Unknown Command (Ignored)"
+    },
+    {
+      "parameters": {
+        "content": "**⚙️ SETUP PLACEHOLDERS — replace before running**\n\n1. **Telegram Trigger** & both **Telegram Reply** nodes → set the real Telegram Bot credential (currently `REPLACE_ME`).\n2. **Call Idea Agent** node → replace `http://YOUR_BACKEND_URL:8000/api/idea` with the real backend URL (or tunnel URL — see [[n8n_phase1_infra_decisions]]).\n3. **Call Idea Agent** node → replace the `X-API-Key` header value `REPLACE_WITH_BACKEND_API_KEY` with the real key, once the backend defines its auth scheme.",
+        "height": 260,
+        "width": 700,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [0, 260],
+      "id": "c011a000-0000-4000-8000-000000000014",
+      "name": "Sticky - Setup Placeholders"
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [[{ "node": "Is Command", "type": "main", "index": 0 }]]
+    },
+    "Is Command": {
+      "main": [[{ "node": "Parse Command", "type": "main", "index": 0 }]]
+    },
+    "Parse Command": {
+      "main": [[{ "node": "Command Router", "type": "main", "index": 0 }]]
+    },
+    "Command Router": {
+      "main": [
+        [{ "node": "Validate Idea Content", "type": "main", "index": 0 }],
+        [{ "node": "Question Agent (Future)", "type": "main", "index": 0 }],
+        [{ "node": "Suggestion Agent (Future)", "type": "main", "index": 0 }],
+        [{ "node": "Decision Agent (Future)", "type": "main", "index": 0 }],
+        [{ "node": "Action Agent (Future)", "type": "main", "index": 0 }],
+        [{ "node": "Observation Agent (Future)", "type": "main", "index": 0 }],
+        [{ "node": "Unknown Command (Ignored)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Validate Idea Content": {
+      "main": [
+        [{ "node": "Call Idea Agent (POST /api/idea)", "type": "main", "index": 0 }],
+        [{ "node": "Reply - Missing Idea Text", "type": "main", "index": 0 }]
+      ]
+    },
+    "Call Idea Agent (POST /api/idea)": {
+      "main": [[{ "node": "Format Idea Reply", "type": "main", "index": 0 }]]
+    },
+    "Format Idea Reply": {
+      "main": [[{ "node": "Reply - Idea Saved", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "pinData": {},
+  "tags": []
+}

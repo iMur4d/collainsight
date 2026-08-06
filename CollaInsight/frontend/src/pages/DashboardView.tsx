@@ -1,64 +1,78 @@
-import React, { useState, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import {
-  LayoutDashboard, BookOpen, FolderKanban, Users, Sparkles,
-  Network, Search, Settings, Bell, ChevronRight, ArrowRight,
-  TrendingUp, Brain, Zap, Star, Clock, Tag, Filter, Plus,
-  MessageSquare, Activity, BarChart3, Hash, Eye, Bookmark,
-  GitBranch, Lightbulb, Target, Globe, ChevronDown, X, Menu,
-  Moon, Sun, SunDim, Monitor
-} from "lucide-react";
+import React, { useMemo, useState } from "react";
+import { BookOpen, Users, MessageSquare, Clock3, ChevronRight, Hash, Sparkles } from "lucide-react";
 
-import colorLogoSrc from "@/imports/CollaInsight__C__logo_-_color.svg";
-import fullLogoSrc from "@/imports/pasted_text/logo.svg";
-import heroBgSrc from "@/imports/HeroSection_Example.png";
-import fullTextLogoSrc from "@/imports/pasted_text/logo.svg";
-import { ImageWithFallback } from "@/app/components/figma/ImageWithFallback";
+import { Badge, useThemeCtx } from "@/shared";
+import { KnowledgeItem } from "@/lib/api";
+import { useIdeas, relativeTime, topTags } from "@/lib/useIdeas";
+import { KnowledgeDetailModal } from "@/components/KnowledgeDetailModal";
 
-
-import { ThemeId, View, THEMES, ThemeContext, NAV_ITEMS, useTheme, useThemeCtx } from "@/shared";
-import { Badge, GradientText, LooperWave, ThemeSwitcher } from "@/shared";
+function isToday(iso: string): boolean {
+  const d = new Date(iso);
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+}
 
 export function DashboardView() {
   const { isLight, fg, mutedFg, subFg, cardBg, border, hoverBg, divider } = useThemeCtx();
+  const { ideas, loading, error } = useIdeas();
+  const [selected, setSelected] = useState<KnowledgeItem | null>(null);
+
+  const stats = useMemo(() => {
+    const contributors = new Set(ideas.map(i => i.telegram_display_name).filter(Boolean));
+    const groups = new Set(ideas.map(i => i.telegram_chat_title).filter(Boolean));
+    const capturedToday = ideas.filter(i => isToday(i.created_at)).length;
+    return {
+      total: ideas.length,
+      capturedToday,
+      contributors: contributors.size,
+      groups: groups.size,
+    };
+  }, [ideas]);
+
+  const recent = ideas.slice(0, 6);
+  const tags = useMemo(() => topTags(ideas, 8), [ideas]);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto space-y-4 sm:space-y-6">
-      {/* AI Daily Briefing */}
+      {/* Overview strip - computed live from what's actually stored, not an AI-generated narrative */}
       <div className="rounded-2xl p-px overflow-hidden" style={{ background: "linear-gradient(135deg, rgba(37,99,235,0.4), rgba(6,182,212,0.2), transparent)" }}>
         <div className="rounded-2xl p-4 sm:p-5 relative overflow-hidden" style={{ background: isLight ? "#eef4ff" : "#0a0f1e" }}>
           <div className="absolute inset-0 pointer-events-none" style={{ background: "radial-gradient(ellipse at 0% 50%, rgba(37,99,235,0.08) 0%, transparent 60%)" }} />
-          <div className="flex flex-col sm:flex-row sm:items-start gap-4 relative">
-            <div className="flex items-start gap-3 sm:gap-4 flex-1 min-w-0">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "linear-gradient(135deg, rgba(37,99,235,0.25), rgba(6,182,212,0.15))" }}>
-                <Sparkles className="w-5 h-5 text-cyan-500" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  <span className="text-sm font-semibold" style={{ color: fg }}>AI Daily Briefing</span>
-                  <Badge color="cyan">Today · Jul 26</Badge>
-                </div>
-                <p className="text-sm leading-relaxed" style={{ color: mutedFg }}>
-                  Your team captured <strong style={{ color: fg }}>14 new knowledge pieces</strong> yesterday across 3 active projects.
-                  The <strong style={{ color: fg }}>AI Agents & RAG</strong> topic is gaining momentum — 6 teammates contributed.
-                  Ahmed and Sara share overlapping expertise in <strong style={{ color: fg }}>n8n automation</strong> — consider pairing them on Project Nexus.
-                </p>
-              </div>
+          <div className="flex items-start gap-3 sm:gap-4 relative">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "linear-gradient(135deg, rgba(37,99,235,0.25), rgba(6,182,212,0.15))" }}>
+              <BookOpen className="w-5 h-5 text-cyan-500" />
             </div>
-            <button className="flex-shrink-0 text-xs text-blue-500 hover:text-blue-400 flex items-center gap-1 self-start ml-12 sm:ml-0 mt-1 sm:mt-0">
-              Full report <ChevronRight className="w-3 h-3" />
-            </button>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <span className="text-sm font-semibold" style={{ color: fg }}>Knowledge Base Overview</span>
+                <Badge color="cyan">Live from Supabase</Badge>
+              </div>
+              {loading ? (
+                <p className="text-sm" style={{ color: mutedFg }}>Loading…</p>
+              ) : ideas.length === 0 ? (
+                <p className="text-sm leading-relaxed" style={{ color: mutedFg }}>
+                  No ideas captured yet. Send <strong style={{ color: fg }}>/idea &lt;your idea&gt;</strong> to the Telegram bot to see it appear here.
+                </p>
+              ) : (
+                <p className="text-sm leading-relaxed" style={{ color: mutedFg }}>
+                  <strong style={{ color: fg }}>{stats.total} idea{stats.total === 1 ? "" : "s"}</strong> captured
+                  {stats.contributors > 0 && <> from <strong style={{ color: fg }}>{stats.contributors} contributor{stats.contributors === 1 ? "" : "s"}</strong></>}
+                  {stats.groups > 0 && <> across <strong style={{ color: fg }}>{stats.groups} Telegram group{stats.groups === 1 ? "" : "s"}</strong></>}.
+                  {" "}Most recent: <strong style={{ color: fg }}>{recent[0]?.title}</strong> ({relativeTime(recent[0]?.created_at)}).
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Stats grid */}
+      {/* Stats grid - every value here is a real count over fetched data */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: "Knowledge pieces", value: "1,842", delta: "+14 today", icon: BookOpen, color: "blue" },
-          { label: "Active projects", value: "7", delta: "2 need attention", icon: FolderKanban, color: "cyan" },
-          { label: "Collaborations", value: "23", delta: "+5 suggested", icon: Users, color: "purple" },
-          { label: "AI queries today", value: "318", delta: "↑ 12% vs yesterday", icon: Zap, color: "green" },
+          { label: "Ideas captured", value: stats.total, icon: BookOpen, color: "blue" },
+          { label: "Captured today", value: stats.capturedToday, icon: Clock3, color: "cyan" },
+          { label: "Contributors", value: stats.contributors, icon: Users, color: "purple" },
+          { label: "Telegram groups", value: stats.groups, icon: MessageSquare, color: "green" },
         ].map(stat => {
           const Icon = stat.icon;
           const colorMap: Record<string, string> = {
@@ -72,103 +86,101 @@ export function DashboardView() {
               <div className={`w-8 h-8 rounded-lg flex items-center justify-center mb-3 ${colorMap[stat.color]}`}>
                 <Icon className="w-4 h-4" />
               </div>
-              <div className="text-2xl font-bold mb-0.5" style={{ color: fg }}>{stat.value}</div>
+              <div className="text-2xl font-bold mb-0.5" style={{ color: fg }}>{loading ? "—" : stat.value}</div>
               <div className="text-xs" style={{ color: mutedFg }}>{stat.label}</div>
-              <div className="text-xs mt-1 pt-1" style={{ color: mutedFg, borderTop: `1px solid ${divider}` }}>{stat.delta}</div>
             </div>
           );
         })}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent Knowledge */}
+        {/* Recent Knowledge Items */}
         <div className="lg:col-span-2 rounded-2xl overflow-hidden" style={{ background: cardBg, border: `1px solid ${border}` }}>
           <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${divider}` }}>
-            <h2 className="text-sm font-semibold" style={{ color: fg }}>Recent Knowledge</h2>
-            <button className="text-xs text-blue-500 hover:text-blue-400 flex items-center gap-1">View all <ChevronRight className="w-3 h-3" /></button>
+            <h2 className="text-sm font-semibold" style={{ color: fg }}>Recent Knowledge Items</h2>
           </div>
-          <div>
-            {[
-              { title: "RAG Architecture Best Practices", type: "Research", project: "AI Platform", tags: ["AI", "RAG"], time: "2h ago", author: "Ahmed" },
-              { title: "n8n Workflow Automation Patterns", type: "Guide", project: "DevOps", tags: ["n8n", "Automation"], time: "4h ago", author: "Sara" },
-              { title: "Q3 Sprint Retrospective Notes", type: "Meeting", project: "Product", tags: ["Process"], time: "Yesterday", author: "Khalid" },
-              { title: "LLM Fine-tuning Experiments", type: "Research", project: "AI Platform", tags: ["AI", "ML"], time: "Yesterday", author: "Nour" },
-            ].map((item, idx, arr) => (
-              <div key={item.title}
-                className="px-4 sm:px-5 py-3.5 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 group cursor-pointer"
-                style={{ borderBottom: idx < arr.length - 1 ? `1px solid ${divider}` : "none" }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = hoverBg}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
-              >
-                <div className="flex items-start gap-3 flex-1 min-w-0">
-                  <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate transition-colors" style={{ color: fg }}>{item.title}</div>
-                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      <Badge color="blue">{item.type}</Badge>
-                      {item.tags.map(t => <Badge key={t} color="cyan">{t}</Badge>)}
-                      <span className="text-xs" style={{ color: mutedFg }}>· {item.project}</span>
-                    </div>
+          {loading && (
+            <div className="p-4 space-y-3">
+              {[...Array(3)].map((_, i) => <div key={i} className="h-14 rounded-xl animate-pulse" style={{ background: hoverBg }} />)}
+            </div>
+          )}
+          {!loading && recent.length === 0 && (
+            <div className="px-5 py-8 text-center text-sm" style={{ color: mutedFg }}>Nothing captured yet.</div>
+          )}
+          {!loading && recent.map((item, idx, arr) => (
+            <div key={item.id} onClick={() => setSelected(item)}
+              className="px-4 sm:px-5 py-3.5 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 group cursor-pointer"
+              style={{ borderBottom: idx < arr.length - 1 ? `1px solid ${divider}` : "none" }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = hoverBg}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
+            >
+              <div className="flex items-start gap-3 flex-1 min-w-0">
+                <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate transition-colors" style={{ color: fg }}>{item.title}</div>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    {item.tags.slice(0, 3).map(t => <Badge key={t} color="cyan">{t}</Badge>)}
+                    {item.telegram_chat_title && <span className="text-xs" style={{ color: mutedFg }}>· {item.telegram_chat_title}</span>}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 sm:block sm:text-right flex-shrink-0 ml-4 sm:ml-0 mt-1 sm:mt-0">
-                  <div className="text-xs" style={{ color: mutedFg }}>{item.time}</div>
-                  <div className="text-xs sm:mt-0.5" style={{ color: subFg }}>{item.author}</div>
-                </div>
               </div>
-            ))}
-          </div>
+              <div className="flex items-center gap-2 sm:block sm:text-right flex-shrink-0 ml-4 sm:ml-0 mt-1 sm:mt-0">
+                <div className="text-xs" style={{ color: mutedFg }}>{relativeTime(item.created_at)}</div>
+                <div className="text-xs sm:mt-0.5" style={{ color: subFg }}>{item.telegram_display_name}</div>
+              </div>
+            </div>
+          ))}
         </div>
 
         {/* Side column */}
         <div className="space-y-4">
           <div className="rounded-2xl overflow-hidden" style={{ background: cardBg, border: `1px solid ${border}` }}>
-            <div className="px-4 py-3.5" style={{ borderBottom: `1px solid ${divider}` }}>
-              <h2 className="text-sm font-semibold" style={{ color: fg }}>Active Projects</h2>
+            <div className="px-4 py-3.5 flex items-center gap-2" style={{ borderBottom: `1px solid ${divider}` }}>
+              <Hash className="w-3.5 h-3.5 text-cyan-500" />
+              <h2 className="text-sm font-semibold" style={{ color: fg }}>Top Tags</h2>
             </div>
-            <div className="p-4 space-y-3">
-              {[
-                { name: "AI Platform", progress: 68, members: 5, color: "#2563EB" },
-                { name: "DevOps Automation", progress: 42, members: 3, color: "#06B6D4" },
-                { name: "Product Roadmap", progress: 85, members: 7, color: "#8B5CF6" },
-              ].map(proj => (
-                <div key={proj.name} className="group cursor-pointer">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-medium" style={{ color: mutedFg }}>{proj.name}</span>
-                    <span className="text-xs" style={{ color: mutedFg }}>{proj.progress}%</span>
-                  </div>
-                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: isLight ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.06)" }}>
-                    <div className="h-full rounded-full" style={{ width: `${proj.progress}%`, background: proj.color }} />
-                  </div>
-                  <div className="text-[10px] mt-1" style={{ color: subFg }}>{proj.members} members</div>
+            <div className="p-4">
+              {loading && <div className="h-24 rounded-xl animate-pulse" style={{ background: hoverBg }} />}
+              {!loading && tags.length === 0 && (
+                <p className="text-xs" style={{ color: mutedFg }}>No tags yet.</p>
+              )}
+              {!loading && tags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {tags.map(({ tag, count }) => (
+                    <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs" style={{ background: hoverBg, color: mutedFg }}>
+                      {tag} <span style={{ color: subFg }}>({count})</span>
+                    </span>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
           </div>
 
-          <div className="rounded-2xl overflow-hidden" style={{ background: cardBg, border: `1px solid ${border}` }}>
+          {/* Collaboration/AI Insights aren't implemented yet - shown honestly instead of faked */}
+          <div className="rounded-2xl overflow-hidden opacity-60" style={{ background: cardBg, border: `1px solid ${border}` }}>
             <div className="px-4 py-3.5 flex items-center gap-2" style={{ borderBottom: `1px solid ${divider}` }}>
-              <Brain className="w-3.5 h-3.5 text-violet-500" />
+              <Sparkles className="w-3.5 h-3.5 text-violet-500" />
               <h2 className="text-sm font-semibold" style={{ color: fg }}>AI Suggestions</h2>
+              <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: isLight ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.08)", color: subFg }}>
+                Soon
+              </span>
             </div>
-            <div className="p-4 space-y-3">
-              {[
-                { icon: GitBranch, text: "Connect RAG research to AI Platform project", iconColor: "text-blue-500" },
-                { icon: Users, text: "Ahmed & Sara both work on automation — suggest collaboration", iconColor: "text-cyan-500" },
-                { icon: Lightbulb, text: "5 untagged documents need categorization", iconColor: "text-amber-500" },
-              ].map(s => {
-                const Icon = s.icon;
-                return (
-                  <div key={s.text} className="flex items-start gap-2.5 cursor-pointer group">
-                    <Icon className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${s.iconColor}`} />
-                    <p className="text-xs leading-relaxed" style={{ color: mutedFg }}>{s.text}</p>
-                  </div>
-                );
-              })}
+            <div className="p-4">
+              <p className="text-xs leading-relaxed" style={{ color: mutedFg }}>
+                Collaboration matching and AI-generated insights aren't built yet — see the <strong>Collaboration</strong> and <strong>AI Insights</strong> tabs.
+              </p>
             </div>
           </div>
         </div>
       </div>
+
+      {!loading && error && (
+        <div className="p-4 rounded-2xl text-sm" style={{ background: cardBg, border: `1px solid ${border}`, color: mutedFg }}>
+          Couldn't reach the backend ({error}). Make sure it's running at the configured API URL.
+        </div>
+      )}
+
+      <KnowledgeDetailModal item={selected} onClose={() => setSelected(null)} />
     </div>
   );
 }
