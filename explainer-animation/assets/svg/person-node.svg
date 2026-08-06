@@ -1,5 +1,0 @@
-<svg width="60" height="60" viewBox="-30 -30 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <title>Person node — original geometric abstraction (not a stock icon)</title>
-  <path id="person-node-shoulder" d="M-22,26 A22,20 0 0 1 22,26" fill="none" stroke="#e8ecf8" stroke-width="4" stroke-linecap="round" />
-  <circle id="person-node-head" cx="0" cy="-6" r="13" fill="#e8ecf8" />
-</svg>

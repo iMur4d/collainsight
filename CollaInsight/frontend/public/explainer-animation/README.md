@@ -89,7 +89,12 @@ illustrations, or emoji.
 | Graph nodes/edges | `scene4-node-*`, `scene4-edge-*`, `scene5-node-*`, `scene5-edge-*` | Shared layout grows from 8 to 14 nodes between scenes 4 → 5 |
 | Insight card icons | `assets/svg/icon-trend.svg`, `icon-link.svg`, `icon-spark.svg` | Original geometric marks — ascending arrow, interlocking capsules, four-point spark |
 | Person nodes | `assets/svg/person-node.svg`, `scene7-person-*` | Circle + arc abstraction, not a stock avatar |
-| Brand mark & wordmark | `scene8-mark-stroke/fill`, `scene8-wordmark-fill`, `scene8-sparkle-fill`, `assets/svg/logo-mark.svg` | Exact path data from `assests/CollaInsight full logo - white.svg` — draws in via stroke, then fills with the brand gradient |
+| Brand mark, wordmark & graph accent | `scene8-mark-stroke/fill`, `scene8-wordmark-fill`, `scene8-graph-accent`, `assets/svg/logo-mark.svg`, `assets/svg/logo-accent-graph.svg` | Exact mark, wordmark, and graph accent path data from `assests/New Logo collainsight - full name.svg` — draws in via stroke, then fills with the brand gradient |
+
+> **Logo source of truth:** the mark, wordmark, and graph accent are copied exactly from
+> `assests/New Logo collainsight - full name.svg`. If that file changes again, re-sync `scene8-mark-stroke`,
+> `scene8-mark-fill`, `scene8-wordmark-fill`, and `scene8-graph-accent` in `index.html` (and
+> `assets/svg/logo-mark.svg` / `assets/svg/logo-accent-graph.svg`) directly from it.
 
 ## Folder structure
 
@@ -100,12 +105,13 @@ explainer-animation/
 ├── script.js               # timeline clock, path-draw setup, counters, HUD wiring
 ├── assets/
 │   └── svg/
-│       ├── logo-mark.svg       # real brand icon, standalone/editable
+│       ├── logo-mark.svg          # exact brand icon, standalone/editable
+│       ├── logo-accent-graph.svg  # exact brand graph accent (edges & nodes)
 │       ├── icon-trend.svg
 │       ├── icon-link.svg
 │       ├── icon-spark.svg
-│       ├── shard-fragment.svg  # reusable "scattered knowledge" fragment
-│       └── person-node.svg     # reusable abstract person node
+│       ├── shard-fragment.svg     # reusable "scattered knowledge" fragment
+│       └── person-node.svg        # reusable abstract person node
 └── README.md
 ```
 
