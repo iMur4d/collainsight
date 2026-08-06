@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from "react";
-import { Search, Send, MessageSquare } from "lucide-react";
+import { Search, Send, MessageSquare, BookOpen, HelpCircle } from "lucide-react";
 
 import { Badge, useThemeCtx } from "@/shared";
 import { KnowledgeItem } from "@/lib/api";
 import { useIdeas, relativeTime } from "@/lib/useIdeas";
-import { KnowledgeDetailModal } from "@/components/KnowledgeDetailModal";
+import { KnowledgeDetailPanel } from "@/components/KnowledgeDetail";
 
 export function KnowledgeView() {
   const { isLight, fg, mutedFg, subFg, cardBg, border, divider, inputBg } = useThemeCtx();
@@ -93,10 +93,13 @@ export function KnowledgeView() {
       )}
 
       {!loading && !error && filtered.length === 0 && (
-        <div className="p-8 rounded-2xl text-center text-sm" style={{ background: cardBg, border: `1px solid ${border}`, color: mutedFg }}>
-          {ideas.length === 0
-            ? <>No ideas captured yet. Send <code className="px-1 rounded" style={{ background: inputBg }}>/idea &lt;your idea&gt;</code> to the Telegram bot to get started.</>
-            : "No ideas match your search."}
+        <div className="p-10 rounded-2xl flex flex-col items-center text-center gap-2" style={{ background: cardBg, border: `1px solid ${border}`, color: mutedFg }}>
+          <BookOpen className="w-6 h-6 opacity-40" />
+          <p className="text-sm">
+            {ideas.length === 0
+              ? <>No ideas captured yet. Send <code className="px-1 rounded" style={{ background: inputBg }}>/idea &lt;your idea&gt;</code> to the Telegram bot to get started.</>
+              : "No ideas match your search."}
+          </p>
         </div>
       )}
 
@@ -104,12 +107,19 @@ export function KnowledgeView() {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map(item => (
             <div key={item.id} onClick={() => setSelected(item)}
-              className="group p-5 rounded-2xl transition-all cursor-pointer flex flex-col gap-3"
+              className="group p-5 rounded-2xl transition-all cursor-pointer flex flex-col gap-3 hover:-translate-y-0.5"
               style={{ background: cardBg, border: `1px solid ${border}` }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = isLight ? "rgba(0,0,0,0.15)" : "rgba(255,255,255,0.12)"}
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = border}
             >
-              <h3 className="text-sm font-semibold leading-snug" style={{ color: fg }}>{item.title}</h3>
+              <div className="flex items-start justify-between gap-2">
+                <h3 className="text-sm font-semibold leading-snug" style={{ color: fg }}>{item.title}</h3>
+                {item.open_questions.length > 0 && (
+                  <span title={`${item.open_questions.length} open question(s)`} className="flex-shrink-0 flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: "rgba(245,158,11,0.1)", color: "#F59E0B" }}>
+                    <HelpCircle className="w-2.5 h-2.5" />{item.open_questions.length}
+                  </span>
+                )}
+              </div>
               <p className="text-xs leading-relaxed line-clamp-2" style={{ color: mutedFg }}>{item.summary}</p>
               <div className="flex flex-wrap gap-1.5">
                 {item.tags.slice(0, 3).map(t => <Badge key={t} color="cyan">{t}</Badge>)}
@@ -127,7 +137,7 @@ export function KnowledgeView() {
         </div>
       )}
 
-      <KnowledgeDetailModal item={selected} onClose={() => setSelected(null)} />
+      <KnowledgeDetailPanel item={selected} onClose={() => setSelected(null)} />
     </div>
   );
 }

@@ -34,7 +34,12 @@ def search_similar_ideas(query: str) -> str:
     # literal substring - a plain ILIKE on the whole phrase almost never
     # matches reworded duplicates even when the model is given a short
     # query, since it still rarely matches a stored idea verbatim.
-    words = [w for w in re.findall(r"[A-Za-z0-9]+", query) if len(w) > 2][:6]
+
+
+# Support both Arabic and English keywords.
+# The previous regex matched only Latin characters, causing Arabic ideas
+# to bypass keyword extraction and similarity search.
+    words = [w for w in re.findall(r"[\u0600-\u06FFA-Za-z0-9]+", query) if len(w) > 2][:6]
     if not words:
         return f"No similar ideas found for '{query}'."
     or_filter = ",".join(f"idea_text.ilike.%{w}%" for w in words)

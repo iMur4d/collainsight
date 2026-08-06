@@ -1,16 +1,12 @@
 import React, { useMemo, useState } from "react";
-import { BookOpen, Users, MessageSquare, Clock3, ChevronRight, Hash, Sparkles } from "lucide-react";
+import { BookOpen, Users, MessageSquare, Clock3, CalendarDays, HelpCircle, Hash } from "lucide-react";
 
 import { Badge, useThemeCtx } from "@/shared";
 import { KnowledgeItem } from "@/lib/api";
 import { useIdeas, relativeTime, topTags } from "@/lib/useIdeas";
-import { KnowledgeDetailModal } from "@/components/KnowledgeDetailModal";
-
-function isToday(iso: string): boolean {
-  const d = new Date(iso);
-  const now = new Date();
-  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
-}
+import { isSameCalendarDay, weeklyGrowth, needsFollowUp } from "@/lib/insights";
+import { KnowledgeDetailPanel } from "@/components/KnowledgeDetail";
+import { GrowthChip } from "@/components/GrowthChip";
 
 export function DashboardView() {
   const { isLight, fg, mutedFg, subFg, cardBg, border, hoverBg, divider } = useThemeCtx();
@@ -20,17 +16,22 @@ export function DashboardView() {
   const stats = useMemo(() => {
     const contributors = new Set(ideas.map(i => i.telegram_display_name).filter(Boolean));
     const groups = new Set(ideas.map(i => i.telegram_chat_title).filter(Boolean));
-    const capturedToday = ideas.filter(i => isToday(i.created_at)).length;
+    const capturedToday = ideas.filter(i => isSameCalendarDay(i.created_at)).length;
+    const growth = weeklyGrowth(ideas);
+    const followUp = needsFollowUp(ideas);
     return {
       total: ideas.length,
       capturedToday,
       contributors: contributors.size,
       groups: groups.size,
+      growth,
+      followUpCount: followUp.length,
     };
   }, [ideas]);
 
   const recent = ideas.slice(0, 6);
   const tags = useMemo(() => topTags(ideas, 8), [ideas]);
+  const followUpPreview = useMemo(() => needsFollowUp(ideas).slice(0, 3), [ideas]);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto space-y-4 sm:space-y-6">
@@ -66,13 +67,15 @@ export function DashboardView() {
         </div>
       </div>
 
-      {/* Stats grid - every value here is a real count over fetched data */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* KPI grid - every value here is a real count/derivation over fetched data, no invented metrics */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
         {[
-          { label: "Ideas captured", value: stats.total, icon: BookOpen, color: "blue" },
-          { label: "Captured today", value: stats.capturedToday, icon: Clock3, color: "cyan" },
-          { label: "Contributors", value: stats.contributors, icon: Users, color: "purple" },
-          { label: "Telegram groups", value: stats.groups, icon: MessageSquare, color: "green" },
+          { label: "Total items", value: stats.total, icon: BookOpen, color: "blue" as const },
+          { label: "This week", value: stats.growth.thisWeek, icon: CalendarDays, color: "cyan" as const, extra: <GrowthChip deltaPct={stats.growth.deltaPct} /> },
+          { label: "Today", value: stats.capturedToday, icon: Clock3, color: "blue" as const },
+          { label: "Contributors", value: stats.contributors, icon: Users, color: "purple" as const },
+          { label: "Telegram groups", value: stats.groups, icon: MessageSquare, color: "green" as const },
+          { label: "Need follow-up", value: stats.followUpCount, icon: HelpCircle, color: "amber" as const },
         ].map(stat => {
           const Icon = stat.icon;
           const colorMap: Record<string, string> = {
@@ -80,11 +83,15 @@ export function DashboardView() {
             cyan: "text-cyan-500 bg-cyan-500/10",
             purple: "text-violet-500 bg-violet-500/10",
             green: "text-emerald-500 bg-emerald-500/10",
+            amber: "text-amber-500 bg-amber-500/10",
           };
           return (
-            <div key={stat.label} className="p-4 rounded-2xl transition-all" style={{ background: cardBg, border: `1px solid ${border}` }}>
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center mb-3 ${colorMap[stat.color]}`}>
-                <Icon className="w-4 h-4" />
+            <div key={stat.label} className="p-3.5 sm:p-4 rounded-2xl transition-all hover:-translate-y-0.5" style={{ background: cardBg, border: `1px solid ${border}` }}>
+              <div className="flex items-center justify-between mb-3">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${colorMap[stat.color]}`}>
+                  <Icon className="w-4 h-4" />
+                </div>
+                {stat.extra}
               </div>
               <div className="text-2xl font-bold mb-0.5" style={{ color: fg }}>{loading ? "—" : stat.value}</div>
               <div className="text-xs" style={{ color: mutedFg }}>{stat.label}</div>
@@ -105,7 +112,11 @@ export function DashboardView() {
             </div>
           )}
           {!loading && recent.length === 0 && (
-            <div className="px-5 py-8 text-center text-sm" style={{ color: mutedFg }}>Nothing captured yet.</div>
+            <div className="px-5 py-10 flex flex-col items-center text-center gap-2" style={{ color: mutedFg }}>
+              <BookOpen className="w-6 h-6 opacity-40" />
+              <p className="text-sm">Nothing captured yet.</p>
+              <p className="text-xs opacity-70">Send <code className="px-1 rounded" style={{ background: hoverBg }}>/idea</code> in Telegram to get started.</p>
+            </div>
           )}
           {!loading && recent.map((item, idx, arr) => (
             <div key={item.id} onClick={() => setSelected(item)}
@@ -156,20 +167,30 @@ export function DashboardView() {
             </div>
           </div>
 
-          {/* Collaboration/AI Insights aren't implemented yet - shown honestly instead of faked */}
-          <div className="rounded-2xl overflow-hidden opacity-60" style={{ background: cardBg, border: `1px solid ${border}` }}>
+          <div className="rounded-2xl overflow-hidden" style={{ background: cardBg, border: `1px solid ${border}` }}>
             <div className="px-4 py-3.5 flex items-center gap-2" style={{ borderBottom: `1px solid ${divider}` }}>
-              <Sparkles className="w-3.5 h-3.5 text-violet-500" />
-              <h2 className="text-sm font-semibold" style={{ color: fg }}>AI Suggestions</h2>
-              <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: isLight ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.08)", color: subFg }}>
-                Soon
-              </span>
+              <HelpCircle className="w-3.5 h-3.5 text-amber-500" />
+              <h2 className="text-sm font-semibold" style={{ color: fg }}>Needs Follow-Up</h2>
             </div>
-            <div className="p-4">
-              <p className="text-xs leading-relaxed" style={{ color: mutedFg }}>
-                Collaboration matching and AI-generated insights aren't built yet — see the <strong>Collaboration</strong> and <strong>AI Insights</strong> tabs.
-              </p>
-            </div>
+            {!loading && followUpPreview.length === 0 && (
+              <div className="p-4 text-xs" style={{ color: mutedFg }}>Nothing outstanding right now.</div>
+            )}
+            {!loading && followUpPreview.length > 0 && (
+              <div>
+                {followUpPreview.map(item => (
+                  <div key={item.id} onClick={() => setSelected(item)}
+                    className="px-4 py-2.5 flex items-center justify-between gap-2 cursor-pointer transition-all"
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = hoverBg}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
+                  >
+                    <span className="text-xs truncate" style={{ color: fg }}>{item.title}</span>
+                    <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: "rgba(245,158,11,0.1)", color: "#F59E0B" }}>
+                      {item.open_questions.length}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -180,7 +201,7 @@ export function DashboardView() {
         </div>
       )}
 
-      <KnowledgeDetailModal item={selected} onClose={() => setSelected(null)} />
+      <KnowledgeDetailPanel item={selected} onClose={() => setSelected(null)} />
     </div>
   );
 }

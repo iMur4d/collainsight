@@ -132,9 +132,9 @@ export type View = "landing" | "dashboard" | "knowledge" | "projects" | "collabo
 export const NAV_ITEMS = [
   { id: "dashboard" as View, icon: LayoutDashboard, label: "Dashboard", mvp: true },
   { id: "knowledge" as View, icon: BookOpen, label: "Knowledge", mvp: true },
-  { id: "projects" as View, icon: FolderKanban, label: "Projects", mvp: true },
+  { id: "insights" as View, icon: Sparkles, label: "AI Insights", mvp: true },
+  { id: "projects" as View, icon: FolderKanban, label: "Projects", mvp: false },
   { id: "collaboration" as View, icon: Users, label: "Collaboration", mvp: false },
-  { id: "insights" as View, icon: Sparkles, label: "AI Insights", mvp: false },
   { id: "graph" as View, icon: Network, label: "Knowledge Graph", mvp: false },
 ];
 
