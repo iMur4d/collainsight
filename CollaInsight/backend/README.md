@@ -15,7 +15,8 @@ agents. Those come later, once this PoC has proven the shape works - see
 ## What's here
 
 - `ai/idea_agent.py` - the LangGraph agent (StateGraph + MessagesState + tool calling).
-- `ai/tools.py` - `search_similar_ideas` and the two terminal tools (`save_knowledge`, `flag_as_duplicate`), backed by Supabase.
+- `ai/tools.py` - `search_similar_ideas` (reads the AI-safe `ai_knowledge_feed` view via the `ai_readonly` role, never `poc_ideas` directly - the LLM must never see Telegram metadata or raw message text, even indirectly) and the two terminal tools `save_knowledge`/`flag_as_duplicate` (write to `poc_ideas` via the service-role client - not LLM-facing, since the model only supplies `title`/`summary`/etc. as arguments, never the Telegram fields, which are closed over server-side).
+- `ai/insights.py` - read-only Q&A over `ai_knowledge_feed`, same `ai_readonly` connection as `search_similar_ideas` above.
 - `ai/idea_agent_prompt.md` - the agent's system prompt (source of truth; `idea_agent.py` reads it directly).
 - `api/main.py` - FastAPI app exposing `POST /api/idea`, matching the contract the n8n workflow expects.
 
@@ -49,7 +50,7 @@ agents. Those come later, once this PoC has proven the shape works - see
 
    `telegram_display_name` is username-or-first_name, not Telegram's numeric `from.id`. The numeric ID is a persistent personal identifier and nothing in the MVP links it to an account (`07_DATABASE_SCHEMA.md`'s scope note: participants are identified by raw username/first name only) - so it's intentionally never captured or stored here.
 
-3. **Environment.** Copy `.env.example` to `.env` and fill in `SUPABASE_URL`, `SUPABASE_KEY`, `GEMINI_API_KEY`.
+3. **Environment.** Copy `.env.example` to `.env` and fill in `SUPABASE_URL`, `SUPABASE_KEY`, `GEMINI_API_KEY`, and `INSIGHTS_DB_URL` (see "AI-safe read path" below - required for `/api/idea` itself now, not just Insights AI).
 
 4. **Run it:**
    ```bash
@@ -66,17 +67,19 @@ The n8n workflow (`automation/workflows/collainsight-mvp-idea-agent.json`) has a
 
 The `X-API-Key` header on that node is a placeholder too - this PoC's `/api/idea` doesn't check it yet (no auth layer for the PoC), so any value works for now.
 
-## Insights AI (`POST /api/insights/chat`)
+## AI-safe read path (`ai_readonly` role)
 
-Read-only Q&A/synthesis over captured knowledge, for the frontend's Insights page - deliberately separate from `/api/idea`'s LangGraph agent and from the deterministic KPIs/charts the frontend computes itself from `GET /api/ideas`. See `ai/insights.py` for the full design rationale.
+Every path that hands data to an LLM - `search_similar_ideas` (`ai/tools.py`, part of the core `/api/idea` flow) and Insights AI (`ai/insights.py`, `POST /api/insights/chat`) - reads `ai_knowledge_feed` through the `ai_readonly` role's own connection, never `poc_ideas`/`poc_questions`/etc. through the service-role `SUPABASE_KEY` client. This is deliberate: an LLM should be structurally incapable of seeing Telegram metadata or raw message text, not just coincidentally not-selecting it in today's query. See `ai/insights.py`'s module docstring for the full rationale.
 
-**Setup (one-time, before this endpoint returns real answers):**
+**Setup (one-time, before either of the above returns real results):**
 
 1. `ai_knowledge_feed` (the column-redacted `UNION ALL` view over `poc_ideas`/`poc_questions`/`poc_suggestions`/`poc_decisions`/`poc_actions`/`poc_observations`, excluding all Telegram metadata and raw message text) already exists in Supabase.
 2. **Still needed:** create the `ai_readonly` Postgres role and grant it `SELECT` on `ai_knowledge_feed` only - no grants on the six raw tables. (`create role ai_readonly login password '...'; grant usage on schema public to ai_readonly; grant select on ai_knowledge_feed to ai_readonly;`)
 3. Set `INSIGHTS_DB_URL` in `.env` to `ai_readonly`'s own direct Postgres connection string (Project Settings → Database → Connection string, using that role's credentials) - **not** the `SUPABASE_KEY` service-role key used elsewhere in this backend. That key bypasses RLS and can write; this path must never be able to.
 
-**Request/response:**
+Without this, `search_similar_ideas` raises (missing `INSIGHTS_DB_URL`) and every `/idea` submission fails, not just Insights AI.
+
+### `POST /api/insights/chat` request/response
 
 ```
 POST /api/insights/chat

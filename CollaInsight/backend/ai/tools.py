@@ -5,11 +5,22 @@ the full production KnowledgeItem schema from docs/engineering/07_DATABASE_SCHEM
 This is the smallest persistence layer that can prove the agent architecture
 end-to-end for the presentation; see backend/README.md for the table DDL and
 how this evolves into the real schema after the PoC.
+
+search_similar_ideas is the one tool whose results are handed back to the
+LLM (and can resurface, paraphrased, in what it writes to
+flag_as_duplicate's explanation) - so unlike save_knowledge below, it
+deliberately does NOT read poc_ideas through the service-role client.
+It reads ai_knowledge_feed instead, over the ai_readonly role's own
+connection (INSIGHTS_DB_URL - the same one ai/insights.py uses), which has
+no grant on poc_ideas or any other raw table. That makes it structurally
+incapable of ever handing the model Telegram metadata or raw message text,
+not just coincidentally not-selecting it today.
 """
 import os
 import re
 
 import httpx
+import psycopg2
 from langchain_core.tools import tool
 from supabase import Client, ClientOptions, create_client
 
@@ -46,25 +57,38 @@ def search_similar_ideas(query: str) -> str:
     # matches reworded duplicates even when the model is given a short
     # query, since it still rarely matches a stored idea verbatim.
 
-
-# Support both Arabic and English keywords.
-# The previous regex matched only Latin characters, causing Arabic ideas
-# to bypass keyword extraction and similarity search.
+    # Support both Arabic and English keywords.
+    # The previous regex matched only Latin characters, causing Arabic ideas
+    # to bypass keyword extraction and similarity search.
     words = [w for w in re.findall(r"[\u0600-\u06FFA-Za-z0-9]+", query) if len(w) > 2][:6]
     if not words:
         return f"No similar ideas found for '{query}'."
-    or_filter = ",".join(f"idea_text.ilike.%{w}%" for w in words)
-    response = (
-        get_supabase()
-        .table("poc_ideas")
-        .select("title, summary, idea_text")
-        .or_(or_filter)
-        .execute()
-    )
-    rows = response.data
+
+    # ai_knowledge_feed has no idea_text column (raw message text is
+    # excluded from the view by design) - title/summary are the model's own
+    # prior extractions, which is what duplicate-detection should be
+    # matching against anyway, not the submitter's raw wording.
+    or_clauses = " or ".join(["title ilike %s or summary ilike %s"] * len(words))
+    params = [p for w in words for p in (f"%{w}%", f"%{w}%")]
+
+    conn = psycopg2.connect(os.environ["INSIGHTS_DB_URL"])
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                select title, summary
+                from ai_knowledge_feed
+                where knowledge_type = 'idea' and ({or_clauses})
+                """,
+                params,
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
     if not rows:
         return f"No similar ideas found for '{query}'."
-    lines = [f"- {row['title']}: {row['summary']}" for row in rows]
+    lines = [f"- {title}: {summary}" for title, summary in rows]
     return f"Found {len(rows)} similar idea(s):\n" + "\n".join(lines)
 
 
