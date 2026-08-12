@@ -2320,7 +2320,7 @@
             },
             {
               "fieldId": "telegram_message_id",
-              "fieldValue": "="
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.telegram_message_id }}"
             }
           ]
         }
