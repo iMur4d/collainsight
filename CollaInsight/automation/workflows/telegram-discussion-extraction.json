@@ -1,5 +1,5 @@
 {
-  "id": "Nm9U2yPuQV7jEsbq",
+  "id": "",
   "name": "CollaInsight - Phase 1 - Discussion Extraction",
   "active": false,
   "nodes": [
@@ -18,7 +18,7 @@
       ],
       "id": "b610ccf7-b80e-4892-834c-8f4403ea5ce4",
       "name": "Telegram Trigger",
-      "webhookId": "a2f6d8c1-4e3b-4f7a-9c15-7b8e2d1a6f93"
+      "webhookId": "REPLACE_ME"
     },
     {
       "parameters": {
