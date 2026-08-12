@@ -12,6 +12,11 @@
 .vscode/
 .idea/
 
+# Internal-only development artifacts (kept locally, excluded from GitHub)
+CollaInsight/docs/ai-agent-code-work/
+CollaInsight/old_project/
+implementation_plan_Local_n8n_Setup_Plan_(ِAntigravity_plan).md
+
 # Logs
 logs/
 *.log

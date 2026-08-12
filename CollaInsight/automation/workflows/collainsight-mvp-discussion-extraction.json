@@ -11,8 +11,8 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        9328,
-        -4208
+        9072,
+        -2576
       ],
       "id": "31d9b454-8632-4448-9fe6-148933bd847f",
       "name": "Sticky - Architecture Overview"
@@ -36,7 +36,7 @@
       "webhookId": "b3f6d8c1-4e3b-4f7a-9c15-7b8e2d1a6f94",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -378,7 +378,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://carpentry-distant-retrain.ngrok-free.dev/api/idea",
+        "url": "https://YOUR-BACKEND-TUNNEL-URL/api/idea",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -439,7 +439,7 @@
       "webhookId": "9bdb33f0-4da1-4bf6-8201-090d86c86f3b",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -463,7 +463,7 @@
       "webhookId": "83a09807-5553-4f8c-b093-6cf974851d72",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -478,38 +478,6 @@
       ],
       "id": "70f3efda-a018-46da-82cb-6b35f849d6af",
       "name": "Unknown Command (Ignored)"
-    },
-    {
-      "parameters": {
-        "content": "**⚙️ SETUP PLACEHOLDERS — replace before running**\n\n1. **Telegram Trigger** & every **Telegram Reply** node (12 total — 2 per command) → set the real Telegram Bot credential (currently `REPLACE_ME`). All share the same bot.\n2. **Call Idea Agent** node (the only backend call) → replace `http://YOUR_BACKEND_URL:8000/api/idea` and its `X-API-Key` header, same as before.\n3. Every **Call Gemini - <X>** node (5 total) still uses the direct Gemini REST endpoint because the workflow relies on `responseSchema`. Prefer binding your existing Google Gemini(PaLM) API credential in the HTTP Request node if available, rather than exporting a raw API key in the workflow JSON.\n\n4. Every **Insert <X> to Supabase** node (5 total, native Supabase node) → set the real Supabase credential (currently `REPLACE_ME`) — one credential (Host = your project URL, Secret Key = service-role/secret key) covers all five nodes, no per-node headers needed.\n5. Every **Insert <X> to Supabase** node's `fieldsUi` rows reference column names by string (e.g. `question_text`, `title`) — n8n normally populates these as a live dropdown from your actual table's columns once a credential + `tableId` are set. Reopen each node in the editor after step 4 and re-pick each field from the dropdown to confirm it resolves against your real table (the string values are already correct, this just re-binds them to n8n's live column list).\n6. **Create the five Supabase tables first** — DDL in the sticky note below (`poc_questions`, `poc_suggestions`, `poc_decisions`, `poc_actions`, `poc_observations`). Without them every insert will fail.\n7. `/start` and `/help` are now implemented directly in n8n.\n8. Test both branches of each `Ready to Save <Type>?` gate: a normal complete input and an intentionally ambiguous input.\n9. **Reply - DM Unavailable** node → replace `YOUR_BOT_USERNAME_HERE` in the `https://t.me/YOUR_BOT_USERNAME_HERE` link with your actual bot's @username (from BotFather) — not available anywhere in this workflow/credential to derive automatically, so it's a manual placeholder like the others above.\n10. Test both confirmation paths live: (a) a user who has already DMed the bot before → confirmation arrives privately, group only sees \"✅ Check your DMs to confirm.\"; (b) a user who has never DMed the bot → group sees the DM-unavailable instructions instead, no preview/buttons ever appear in the group either way.\n",
-        "height": 680,
-        "width": 700,
-        "color": 2
-      },
-      "type": "n8n-nodes-base.stickyNote",
-      "typeVersion": 1,
-      "position": [
-        9600,
-        -2976
-      ],
-      "id": "b2e222dc-5ffb-471c-b81c-0af0155faf6b",
-      "name": "Sticky - Setup Placeholders"
-    },
-    {
-      "parameters": {
-        "content": "**Supabase tables needed for the five n8n-native branches**\n(Run once, before using `/question`, `/suggestion`, `/decision`, `/action`, or `/observation`. Each table's extra column matches that type's own schema, not a copy of Idea's or each other's.)\n\n```sql\ncreate table poc_questions (\n  id bigint generated always as identity primary key,\n  question_text text not null,\n  title text not null,\n  summary text not null,\n  is_blocking boolean not null default false,\n  addressed_to text,\n  tags jsonb not null default '[]',\n  keywords jsonb not null default '[]',\n  telegram_display_name text,\n  telegram_chat_id text,\n  telegram_chat_title text,\n  telegram_message_id text,\n  created_at timestamptz not null default now()\n);\n\ncreate table poc_suggestions (\n  id bigint generated always as identity primary key,\n  suggestion_text text not null,\n  title text not null,\n  summary text not null,\n  target text,\n  tags jsonb not null default '[]',\n  keywords jsonb not null default '[]',\n  telegram_display_name text,\n  telegram_chat_id text,\n  telegram_chat_title text,\n  telegram_message_id text,\n  created_at timestamptz not null default now()\n);\n\ncreate table poc_decisions (\n  id bigint generated always as identity primary key,\n  decision_text text not null,\n  title text not null,\n  summary text not null,\n  rationale text,\n  tags jsonb not null default '[]',\n  keywords jsonb not null default '[]',\n  telegram_display_name text,\n  telegram_chat_id text,\n  telegram_chat_title text,\n  telegram_message_id text,\n  created_at timestamptz not null default now()\n);\n\ncreate table poc_actions (\n  id bigint generated always as identity primary key,\n  action_text text not null,\n  title text not null,\n  summary text not null,\n  owner text,\n  due text,\n  tags jsonb not null default '[]',\n  keywords jsonb not null default '[]',\n  telegram_display_name text,\n  telegram_chat_id text,\n  telegram_chat_title text,\n  telegram_message_id text,\n  created_at timestamptz not null default now()\n);\n\ncreate table poc_observations (\n  id bigint generated always as identity primary key,\n  observation_text text not null,\n  title text not null,\n  summary text not null,\n  tags jsonb not null default '[]',\n  keywords jsonb not null default '[]',\n  telegram_display_name text,\n  telegram_chat_id text,\n  telegram_chat_title text,\n  telegram_message_id text,\n  created_at timestamptz not null default now()\n);\n```\n\nEach table is deliberately separate (mirrors `poc_ideas`) and deliberately minimal — none of them copy Idea's richer `concepts`/`assumptions`/`open_questions` fields, which were purpose-built for Idea through iteration, and none of them copy each other's type-specific column either (`is_blocking`/`addressed_to` only make sense for Question, `owner`/`due` only for Action, etc.). Extend per-category further once real usage patterns are understood; this is not the production `KnowledgeItem` schema.",
-        "height": 900,
-        "width": 700,
-        "color": 7
-      },
-      "type": "n8n-nodes-base.stickyNote",
-      "typeVersion": 1,
-      "position": [
-        9584,
-        -2224
-      ],
-      "id": "742d1bf8-9db7-4ed8-be12-44436fd1b8ab",
-      "name": "Sticky - Supabase Table DDL"
     },
     {
       "parameters": {
@@ -578,7 +546,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googlePalmApi",
         "sendHeaders": true,
@@ -609,7 +577,7 @@
       "name": "Call Gemini - Question",
       "credentials": {
         "googlePalmApi": {
-          "id": "qR2VlPng3vVhu6dU",
+          "id": "REPLACE_ME",
           "name": "Google Gemini(PaLM) Api account"
         }
       }
@@ -647,7 +615,7 @@
       "webhookId": "2e918d66-e4dc-468e-bba8-46de64a3303e",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -719,7 +687,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googlePalmApi",
         "sendHeaders": true,
@@ -750,7 +718,7 @@
       "name": "Call Gemini - Suggestion",
       "credentials": {
         "googlePalmApi": {
-          "id": "qR2VlPng3vVhu6dU",
+          "id": "REPLACE_ME",
           "name": "Google Gemini(PaLM) Api account"
         }
       }
@@ -788,7 +756,7 @@
       "webhookId": "09523430-4568-4538-a8ed-176afcb8e63f",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -860,7 +828,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googlePalmApi",
         "sendHeaders": true,
@@ -891,7 +859,7 @@
       "name": "Call Gemini - Decision",
       "credentials": {
         "googlePalmApi": {
-          "id": "qR2VlPng3vVhu6dU",
+          "id": "REPLACE_ME",
           "name": "Google Gemini(PaLM) Api account"
         }
       }
@@ -929,7 +897,7 @@
       "webhookId": "a03abba4-d8ec-4254-8512-309ab3ac96a7",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -1001,7 +969,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googlePalmApi",
         "sendHeaders": true,
@@ -1032,7 +1000,7 @@
       "name": "Call Gemini - Action",
       "credentials": {
         "googlePalmApi": {
-          "id": "qR2VlPng3vVhu6dU",
+          "id": "REPLACE_ME",
           "name": "Google Gemini(PaLM) Api account"
         }
       }
@@ -1070,7 +1038,7 @@
       "webhookId": "622f919d-a52e-43b6-9e42-ec428447f8e5",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -1142,7 +1110,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googlePalmApi",
         "sendHeaders": true,
@@ -1173,7 +1141,7 @@
       "name": "Call Gemini - Observation",
       "credentials": {
         "googlePalmApi": {
-          "id": "qR2VlPng3vVhu6dU",
+          "id": "REPLACE_ME",
           "name": "Google Gemini(PaLM) Api account"
         }
       }
@@ -1211,7 +1179,7 @@
       "webhookId": "9730b578-a0d1-4a4a-8dcd-33f167e06faa",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -1235,7 +1203,7 @@
       "webhookId": "57d8e565-6aea-4aeb-9b97-aba45c5c8b86",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -1259,7 +1227,7 @@
       "webhookId": "54e6a369-3d5f-42e2-8d06-0f9cf3185e04",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -1339,7 +1307,7 @@
       "webhookId": "7096a3a1-3785-4c3c-ab81-36209a623fc0",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -1419,7 +1387,7 @@
       "webhookId": "622ef9d7-32ab-4a8d-a6a3-5f9c32b68efa",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -1499,7 +1467,7 @@
       "webhookId": "652a0b8a-940d-45df-997d-c577c140a882",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -1579,7 +1547,7 @@
       "webhookId": "14ec0f71-c5ff-4b63-b45d-c26f014ff0bd",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -1659,7 +1627,7 @@
       "webhookId": "13c9664b-2d20-454b-8821-0fb0c05c7cc2",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -1805,7 +1773,7 @@
       "name": "Create Pending Knowledge",
       "credentials": {
         "supabaseApi": {
-          "id": "BczNtaf6tmogVxuq",
+          "id": "REPLACE_ME",
           "name": "CollaInsight-demo"
         }
       }
@@ -1866,7 +1834,7 @@
       "webhookId": "438108d8-5a9d-4914-97c7-8c80192ce44c",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       },
@@ -1891,7 +1859,7 @@
       "webhookId": "860ea2b5-4d67-40df-a140-7208cc5f58fc",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -1915,7 +1883,7 @@
       "webhookId": "0a5f687c-46bc-4e03-9aaf-c39a5d315371",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -1958,7 +1926,7 @@
       "alwaysOutputData": true,
       "credentials": {
         "supabaseApi": {
-          "id": "BczNtaf6tmogVxuq",
+          "id": "REPLACE_ME",
           "name": "CollaInsight-demo"
         }
       }
@@ -2016,7 +1984,7 @@
       "webhookId": "89c13092-0cc8-498d-8f0e-f1f25e828e7b",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -2041,7 +2009,7 @@
       "webhookId": "7a85f976-92af-48e1-9070-5b13fa084d39",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -2276,7 +2244,7 @@
       "name": "Delete Pending - Cancel",
       "credentials": {
         "supabaseApi": {
-          "id": "BczNtaf6tmogVxuq",
+          "id": "REPLACE_ME",
           "name": "CollaInsight-demo"
         }
       }
@@ -2300,7 +2268,7 @@
       "webhookId": "91ccaa5d-ace1-428b-8234-07203f952cc0",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -2367,7 +2335,7 @@
       "name": "Insert Question to Supabase",
       "credentials": {
         "supabaseApi": {
-          "id": "BczNtaf6tmogVxuq",
+          "id": "REPLACE_ME",
           "name": "CollaInsight-demo"
         }
       }
@@ -2430,7 +2398,7 @@
       "name": "Insert Suggestion to Supabase",
       "credentials": {
         "supabaseApi": {
-          "id": "BczNtaf6tmogVxuq",
+          "id": "REPLACE_ME",
           "name": "CollaInsight-demo"
         }
       }
@@ -2493,7 +2461,7 @@
       "name": "Insert Decision to Supabase",
       "credentials": {
         "supabaseApi": {
-          "id": "BczNtaf6tmogVxuq",
+          "id": "REPLACE_ME",
           "name": "CollaInsight-demo"
         }
       }
@@ -2560,7 +2528,7 @@
       "name": "Insert Action to Supabase",
       "credentials": {
         "supabaseApi": {
-          "id": "BczNtaf6tmogVxuq",
+          "id": "REPLACE_ME",
           "name": "CollaInsight-demo"
         }
       }
@@ -2619,7 +2587,7 @@
       "name": "Insert Observation to Supabase",
       "credentials": {
         "supabaseApi": {
-          "id": "BczNtaf6tmogVxuq",
+          "id": "REPLACE_ME",
           "name": "CollaInsight-demo"
         }
       }
@@ -2648,7 +2616,7 @@
       "name": "Delete Pending - Saved",
       "credentials": {
         "supabaseApi": {
-          "id": "BczNtaf6tmogVxuq",
+          "id": "REPLACE_ME",
           "name": "CollaInsight-demo"
         }
       }
@@ -2672,7 +2640,7 @@
       "webhookId": "66b52848-dda7-4d77-ab03-d214ef1997bb",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -2731,7 +2699,7 @@
       "webhookId": "fdc6fde3-b150-4ecb-898b-e25614714068",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -2789,7 +2757,7 @@
       "webhookId": "2560c636-c0fe-4705-8779-7610235a7e43",
       "credentials": {
         "telegramApi": {
-          "id": "aWVkoY2MxPGJF8Ju",
+          "id": "REPLACE_ME",
           "name": "CollaInsight Assistant Telegram account"
         }
       }
@@ -3672,18 +3640,17 @@
       ]
     }
   },
-  "active": true,
+  "active": false,
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate",
     "availableInMCP": false
   },
-  "versionId": "1bf7ec70-be08-4a1e-b322-e74c03bf457b",
+  "versionId": "",
   "meta": {
-    "templateCredsSetupCompleted": true,
-    "instanceId": "d4f70e1de2d501f6c63ac858429328d5a742d65a5c9b497243376d197c3e4567"
+    "templateCredsSetupCompleted": true
   },
   "nodeGroups": [],
-  "id": "ektqsrcNe1CaPtjM",
+  "id": "",
   "tags": []
 }
