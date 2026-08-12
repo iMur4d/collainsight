@@ -60,7 +60,7 @@ agents. Those come later, once this PoC has proven the shape works - see
 
 ## Wiring it to the n8n workflow
 
-The n8n workflow (`automation/workflows/collainsight-mvp-idea-agent.json`) has a placeholder URL on its **Call Idea Agent** node: `http://YOUR_BACKEND_URL:8000/api/idea`.
+The n8n workflow (`automation/workflows/collainsight-mvp-discussion-extraction.json`) has a placeholder URL on its **Call Idea Agent** node: `http://YOUR_BACKEND_URL:8000/api/idea`.
 
 - If n8n and this backend both run directly on your machine: use `http://localhost:8000/api/idea`.
 - If n8n runs in Docker (it does, per the project's `docker-compose.yml`) and this backend runs on the host, `localhost` inside the container means the container itself, not your machine. Use `http://host.docker.internal:8000/api/idea` instead.
