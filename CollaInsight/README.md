@@ -28,13 +28,13 @@ The entire platform architecture and product vision have been strictly defined. 
 ## Current Status
 
 Project Phase:
-Architecture Complete
+MVP capture pipeline live end-to-end; polishing before final presentation
 
 Current Milestone:
-Backend Foundation
+All six knowledge types capturing via Telegram, with private confirmation before storage
 
 Next Milestone:
-Workflow Integration (n8n)
+Manager authentication/RBAC; production `KnowledgeItem` schema
 
 Development Style:
 Documentation First
@@ -42,18 +42,19 @@ AI Assisted
 Modular Architecture
 
 ### What Has Been Completed:
-1. **Architectural Blueprints:** All core architectural specifications (Frontend, Backend, DB Schema, API Contracts, and Business Rules) have been drafted and refined. The system is intentionally designed to be modular, provider-agnostic, and AI-ready.
-2. **Frontend UI Shell:** Built a highly responsive React/Vite frontend featuring:
-   - A beautiful, premium **Landing Page** with custom human-like typing animations and accurate product marketing copy.
-   - An **App Shell (Dashboard, Graph View, Knowledge Hub)** that flawlessly adapts to mobile devices via an overlay drawer system.
-   - A custom **Favicon** integration reflecting the official brand.
-3. **Development Environment:** Fixed and configured the local TypeScript environment by adding `tsconfig.json` and `vite-env.d.ts`, completely eliminating IDE parsing errors and resolving strict type imports.
+1. **Architectural Blueprints:** All core architectural specifications (Frontend, Backend, DB Schema, API Contracts, and Business Rules) drafted and refined. Modular, provider-agnostic, AI-ready by design.
+2. **Frontend:** React/Vite app with a Landing Page, App Shell, and live Dashboard/Knowledge/AI Insights pages reading real data from the backend — no mock content.
+3. **Telegram capture, all six commands live:** `/idea` via a Python (FastAPI + LangGraph) backend agent that searches, compares, and saves-or-flags-duplicate; `/question`, `/suggestion`, `/decision`, `/action`, `/observation` via n8n-native Gemini extraction with deterministic validation, each with its own type-specific schema.
+4. **Private confirmation before storage:** every extraction is held as a temporary pending record and previewed to the submitter via Telegram DM with Save/Cancel, before anything reaches permanent storage — see `docs/engineering/05_WORKFLOWS.md`.
+5. **Insights AI:** `POST /api/insights/chat`, read-only grounded Q&A over confirmed knowledge through a restricted, Telegram-metadata-free view and a dedicated least-privilege database role — the access boundary is verified, not assumed. See `docs/engineering/13_SECURITY.md`.
 
-### Next Steps (Ready to be built):
-- **Backend & Database Initialization:** Setting up the actual database (e.g., Supabase/PostgreSQL) based on `07_DATABASE_SCHEMA.md`.
-- **Workflow Automation Integration:** Connecting the frontend/backend to the orchestration layer (e.g., n8n) to handle the event-driven architecture.
-- **Telegram Bot Webhook:** Building the entry point for capturing raw messages from Telegram.
-- **AI Pipeline Implementation:** Writing the actual LLM prompts and routing logic as defined in `06_AI_PIPELINE.md`. For the MVP this means slash-command-triggered extraction and structuring within the category the command already specifies (see `docs/00_MVP_SCOPE.md`'s `<capture_principle>`) — not AI-driven Intent Classification, which is post-MVP (`06_AI_PIPELINE.md` Stage 3).
+### Next Steps:
+- Fix a known bug in five of the n8n Supabase-insert nodes (malformed expression syntax) before trusting Save for those commands.
+- Wire the dashboard to read the five new knowledge tables, not just `poc_ideas`.
+- Manager authentication/RBAC.
+- Move the six flat PoC tables toward the production `KnowledgeItem` schema in `07_DATABASE_SCHEMA.md`.
+
+See `PROJECT_STATUS.md` for the full milestone list and changelog.
 
 ---
 

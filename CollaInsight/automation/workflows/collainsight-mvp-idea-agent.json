@@ -5,14 +5,14 @@
   "nodes": [
     {
       "parameters": {
-        "content": "# CollaInsight — MVP Orchestration Workflow\n\n**n8n is the orchestration layer only. All intelligence lives in the Python backend (LangGraph agents).**\n\n```\nTelegram → n8n → Python Backend (LangGraph Agent) → Supabase → n8n → Telegram Reply\n```\n\nThis workflow:\n1. Receives every Telegram message.\n2. Keeps only slash-command messages (`/idea`, `/question`, ...) — the command IS the classification, no AI guessing here.\n3. Routes by command with a Switch node.\n4. `/idea` is the only command wired to real logic for the MVP — it calls the backend's `POST /api/idea` and relays the JSON reply back to Telegram.\n5. The other five commands (`/question`, `/suggestion`, `/decision`, `/action`, `/observation`) end at a **placeholder node** so the full six-agent architecture is visible on canvas during the presentation, even though only one agent is implemented.\n\nAdding a new agent later = swap its placeholder NoOp node for an HTTP Request node pointed at its own backend endpoint. No restructuring of this workflow required.",
-        "height": 340,
-        "width": 1080,
+        "content": "# CollaInsight — MVP Orchestration Workflow\n\n**n8n is the orchestration layer. `/idea` calls the Python backend (LangGraph PoC) for its AI logic. The other five commands perform their AI refinement directly inside n8n, since that extraction is repetitive and deterministic — one prompt, one JSON schema per command, no multi-step reasoning or tool use.**\n\n```\n/idea:                                            Telegram → n8n → Python Backend (LangGraph Agent) → Supabase → n8n → Telegram Reply\n/question /suggestion /decision /action /observation:  Telegram → n8n → Gemini (type-specific structured JSON) → Supabase (direct) → n8n → Telegram Reply\n```\n\nThis workflow:\n1. Receives every Telegram message.\n2. Keeps only slash-command messages (`/idea`, `/question`, ...) — the command IS the classification, no AI guessing here.\n3. Routes by command with a Switch node.\n4. `/idea` calls the backend's `POST /api/idea` (LangGraph agent — search, compare, save-or-flag-duplicate). Unchanged from before — kept as the reference PoC.\n5. The other five commands each get their OWN prompt and OWN JSON schema, not a shared generic one — a Question, a Decision, and an Observation are genuinely different kinds of knowledge, not the same \"thought\" with a different label. Each: validate content → build its type-specific prompt → call Gemini for its type-specific structured JSON → validate that output → insert into that type's own Supabase table → reply. No backend involved.\n\n**Extraction, not reasoning:** every prompt below is written to preserve what the submitter actually said — never resolve a Question, never judge a Decision, never invent an owner/deadline/rationale/target that wasn't stated. Fields that require unstated information are `nullable` and left `null` rather than guessed.\n\n**Why the split (n8n vs backend):** the five commands' extraction is single-shot structured generation, not multi-step reasoning — a good fit for n8n's deterministic orchestration. The backend stays reserved for AI work that genuinely needs Python/agentic logic — e.g. Idea's search-then-decide duplicate check today, and later Insights AI, RAG, entity resolution, ranking, or other non-trivial reasoning.\n\n**Why an HTTP Request node calls Gemini directly, not a native n8n AI node:** verified before building this — as of this workflow, neither n8n's `Google Gemini` app node nor the LangChain `Google Gemini Chat Model` sub-node exposes Gemini's native `responseSchema` structured-output parameter (confirmed via n8n's own community forum; the community's own workaround for schema-enforced JSON is either an unreliable Output Parser node or a direct API call). A plain HTTP Request to `generateContent` with `generationConfig.responseMimeType`/`responseSchema` is the only way to get Gemini's guaranteed-shape JSON today — verified against Google's own REST reference, not assumed from memory.\n\n**Why the five Supabase inserts use the native `Supabase` node, not HTTP Request:** also verified, not assumed — n8n does ship a native Supabase node (`n8n-nodes-base.supabase`, credential type `supabaseApi`) with a `row → create` operation that maps each column explicitly via `fieldsUi` (field name → expression), confirmed directly from n8n's own source. Unlike the Gemini case, this one IS fully capable of what's needed here, so it replaces the earlier HTTP-based insert. One shared credential (project URL + service key) covers all five insert nodes instead of five copies of the same header pair.",
+        "height": 680,
+        "width": 1300,
         "color": 6
       },
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [-40, -420],
+      "position": [-40, -680],
       "id": "c011a000-0000-4000-8000-000000000001",
       "name": "Sticky - Architecture Overview"
     },
@@ -77,7 +77,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const msg = $json.message;\nconst text = (msg && msg.text || '').trim();\nconst parts = text.split(/\\s+/);\nconst command = (parts[0] || '').toLowerCase();\nconst content = parts.slice(1).join(' ').trim();\nconst from = msg.from || {};\n\nreturn {\n  json: {\n    command,\n    idea_text: content,\n    // Display-only attribution (matches 07_DATABASE_SCHEMA.md's MVP scope note:\n    // Telegram participants are identified by raw username/first name, not a\n    // persistent account ID - no account linking exists in the MVP).\n    telegram_display_name: from.username || from.first_name || 'unknown',\n    chat_id: msg.chat.id,\n    // Group name, not personal data - only present for groups/supergroups,\n    // not private chats (msg.chat.title is undefined there).\n    chat_title: msg.chat.title || null,\n    message_id: msg.message_id\n  }\n};"
+        "jsCode": "const msg = $json.message;\nconst text = (msg && msg.text || '').trim();\nconst parts = text.split(/\\s+/);\nconst command = (parts[0] || '').toLowerCase();\nconst content = parts.slice(1).join(' ').trim();\nconst from = msg.from || {};\n\nreturn {\n  json: {\n    command,\n    // idea_text: kept exactly as-is so the existing /idea branch is untouched.\n    idea_text: content,\n    // content_text: generic alias of the same value, used by the other five\n    // command branches (question/suggestion/decision/action/observation) so\n    // they don't each need their own copy of this parsing logic.\n    content_text: content,\n    // Display-only attribution (matches 07_DATABASE_SCHEMA.md's MVP scope note:\n    // Telegram participants are identified by raw username/first name, not a\n    // persistent account ID - no account linking exists in the MVP).\n    telegram_display_name: from.username || from.first_name || 'unknown',\n    chat_id: msg.chat.id,\n    // Group name, not personal data - only present for groups/supergroups,\n    // not private chats (msg.chat.title is undefined there).\n    chat_title: msg.chat.title || null,\n    message_id: msg.message_id\n  }\n};"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -87,7 +87,7 @@
     },
     {
       "parameters": {
-        "content": "**Command Router**\nSwitch on `$json.command`. Only `/idea` is wired to a real branch. The other five outputs go straight to placeholder nodes below — no AI or logic runs for them in the MVP.",
+        "content": "**Command Router**\nSwitch on `$json.command`. `/idea` routes to the backend-calling branch (unchanged). The other five route to their own n8n-native refinement branches (Gemini call → validate → Supabase insert → reply) — see the sticky note on each branch below.",
         "height": 160,
         "width": 500,
         "color": 4
@@ -184,14 +184,14 @@
     },
     {
       "parameters": {
-        "content": "**IDEA AGENT — Implemented for MVP**\nValidates content → calls Python backend `POST /api/idea` → relays the structured JSON reply to Telegram.\n\nAll extraction/dedup/save logic runs in the backend (LangGraph). This branch never touches AI directly.",
-        "height": 160,
+        "content": "**IDEA AGENT — Implemented for MVP, calls the backend**\nValidates content → calls Python backend `POST /api/idea` → relays the structured JSON reply to Telegram.\n\nAll extraction/dedup/save logic runs in the backend (LangGraph). This branch never touches AI directly. Unchanged reference implementation — the five branches below intentionally do NOT follow this backend-calling pattern; see the note above the router.",
+        "height": 180,
         "width": 780,
         "color": 3
       },
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [1300, -220],
+      "position": [1300, -240],
       "id": "c011a000-0000-4000-8000-000000000007",
       "name": "Sticky - Idea Branch Explanation"
     },
@@ -282,70 +282,17 @@
       }
     },
     {
-      "parameters": {
-        "content": "**FUTURE AGENTS — placeholders only**\n\nEach node here is a dead end (`NoOp`) so the six-agent architecture reads clearly on canvas, but nothing executes.\n\n**To activate an agent later:** delete its NoOp node and wire the Switch output straight into a new `HTTP Request` node calling that agent's backend endpoint (e.g. `POST /api/question`), then a reply node — same shape as the Idea branch. No other part of this workflow changes.",
-        "height": 900,
-        "width": 620,
-        "color": 5
-      },
-      "type": "n8n-nodes-base.stickyNote",
-      "typeVersion": 1,
-      "position": [1640, 340],
-      "id": "c011a000-0000-4000-8000-00000000000d",
-      "name": "Sticky - Future Agents Explanation"
-    },
-    {
-      "parameters": { "notes": "Future Agent", "notesInFlow": true },
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
-      "position": [1040, 400],
-      "id": "c011a000-0000-4000-8000-00000000000e",
-      "name": "Question Agent (Future)"
-    },
-    {
-      "parameters": { "notes": "Future Agent", "notesInFlow": true },
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
-      "position": [1040, 580],
-      "id": "c011a000-0000-4000-8000-00000000000f",
-      "name": "Suggestion Agent (Future)"
-    },
-    {
-      "parameters": { "notes": "Future Agent", "notesInFlow": true },
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
-      "position": [1040, 760],
-      "id": "c011a000-0000-4000-8000-000000000010",
-      "name": "Decision Agent (Future)"
-    },
-    {
-      "parameters": { "notes": "Future Agent", "notesInFlow": true },
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
-      "position": [1040, 940],
-      "id": "c011a000-0000-4000-8000-000000000011",
-      "name": "Action Agent (Future)"
-    },
-    {
-      "parameters": { "notes": "Future Agent", "notesInFlow": true },
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
-      "position": [1040, 1120],
-      "id": "c011a000-0000-4000-8000-000000000012",
-      "name": "Observation Agent (Future)"
-    },
-    {
       "parameters": { "notes": "Unrecognized command — ignored", "notesInFlow": true },
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
-      "position": [1040, 1300],
+      "position": [1040, 2900],
       "id": "c011a000-0000-4000-8000-000000000013",
       "name": "Unknown Command (Ignored)"
     },
     {
       "parameters": {
-        "content": "**⚙️ SETUP PLACEHOLDERS — replace before running**\n\n1. **Telegram Trigger** & both **Telegram Reply** nodes → set the real Telegram Bot credential (currently `REPLACE_ME`).\n2. **Call Idea Agent** node → replace `http://YOUR_BACKEND_URL:8000/api/idea` with the real backend URL (or tunnel URL — see [[n8n_phase1_infra_decisions]]).\n3. **Call Idea Agent** node → replace the `X-API-Key` header value `REPLACE_WITH_BACKEND_API_KEY` with the real key, once the backend defines its auth scheme.",
-        "height": 260,
+        "content": "**⚙️ SETUP PLACEHOLDERS — replace before running**\n\n1. **Telegram Trigger** & every **Telegram Reply** node (12 total — 2 per command) → set the real Telegram Bot credential (currently `REPLACE_ME`). All share the same bot.\n2. **Call Idea Agent** node (the only backend call) → replace `http://YOUR_BACKEND_URL:8000/api/idea` and its `X-API-Key` header, same as before.\n3. Every **Call Gemini - <X>** node (5 total, one per new command) → replace the `x-goog-api-key` header value `REPLACE_WITH_GEMINI_API_KEY` with a real Gemini API key. Model is set to `gemini-3-flash-preview` in each node's URL — change it there if you use a different one.\n4. Every **Insert <X> to Supabase** node (5 total, native Supabase node) → set the real Supabase credential (currently `REPLACE_ME`) — one credential (Host = your project URL, Secret Key = service-role/secret key) covers all five nodes, no per-node headers needed.\n5. Every **Insert <X> to Supabase** node's `fieldsUi` rows reference column names by string (e.g. `question_text`, `title`) — n8n normally populates these as a live dropdown from your actual table's columns once a credential + `tableId` are set. Reopen each node in the editor after step 4 and re-pick each field from the dropdown to confirm it resolves against your real table (the string values are already correct, this just re-binds them to n8n's live column list).\n6. **Create the five Supabase tables first** — DDL in the sticky note below (`poc_questions`, `poc_suggestions`, `poc_decisions`, `poc_actions`, `poc_observations`). Without them every insert will fail.",
+        "height": 380,
         "width": 700,
         "color": 2
       },
@@ -354,6 +301,795 @@
       "position": [0, 260],
       "id": "c011a000-0000-4000-8000-000000000014",
       "name": "Sticky - Setup Placeholders"
+    },
+    {
+      "parameters": {
+        "content": "**Supabase tables needed for the five n8n-native branches**\n(Run once, before using `/question`, `/suggestion`, `/decision`, `/action`, or `/observation`. Each table's extra column matches that type's own schema, not a copy of Idea's or each other's.)\n\n```sql\ncreate table poc_questions (\n  id bigint generated always as identity primary key,\n  question_text text not null,\n  title text not null,\n  summary text not null,\n  is_blocking boolean not null default false,\n  addressed_to text,\n  tags jsonb not null default '[]',\n  keywords jsonb not null default '[]',\n  telegram_display_name text,\n  telegram_chat_id text,\n  telegram_chat_title text,\n  telegram_message_id text,\n  created_at timestamptz not null default now()\n);\n\ncreate table poc_suggestions (\n  id bigint generated always as identity primary key,\n  suggestion_text text not null,\n  title text not null,\n  summary text not null,\n  target text,\n  tags jsonb not null default '[]',\n  keywords jsonb not null default '[]',\n  telegram_display_name text,\n  telegram_chat_id text,\n  telegram_chat_title text,\n  telegram_message_id text,\n  created_at timestamptz not null default now()\n);\n\ncreate table poc_decisions (\n  id bigint generated always as identity primary key,\n  decision_text text not null,\n  title text not null,\n  summary text not null,\n  rationale text,\n  tags jsonb not null default '[]',\n  keywords jsonb not null default '[]',\n  telegram_display_name text,\n  telegram_chat_id text,\n  telegram_chat_title text,\n  telegram_message_id text,\n  created_at timestamptz not null default now()\n);\n\ncreate table poc_actions (\n  id bigint generated always as identity primary key,\n  action_text text not null,\n  title text not null,\n  summary text not null,\n  owner text,\n  due text,\n  tags jsonb not null default '[]',\n  keywords jsonb not null default '[]',\n  telegram_display_name text,\n  telegram_chat_id text,\n  telegram_chat_title text,\n  telegram_message_id text,\n  created_at timestamptz not null default now()\n);\n\ncreate table poc_observations (\n  id bigint generated always as identity primary key,\n  observation_text text not null,\n  title text not null,\n  summary text not null,\n  tags jsonb not null default '[]',\n  keywords jsonb not null default '[]',\n  telegram_display_name text,\n  telegram_chat_id text,\n  telegram_chat_title text,\n  telegram_message_id text,\n  created_at timestamptz not null default now()\n);\n```\n\nEach table is deliberately separate (mirrors `poc_ideas`) and deliberately minimal — none of them copy Idea's richer `concepts`/`assumptions`/`open_questions` fields, which were purpose-built for Idea through iteration, and none of them copy each other's type-specific column either (`is_blocking`/`addressed_to` only make sense for Question, `owner`/`due` only for Action, etc.). Extend per-category further once real usage patterns are understood; this is not the production `KnowledgeItem` schema.",
+        "height": 900,
+        "width": 700,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [0, 700],
+      "id": "c011a000-0000-4000-8000-000000000016",
+      "name": "Sticky - Supabase Table DDL"
+    },
+
+    {
+      "parameters": {
+        "content": "**QUESTION — type-specific schema: title, summary, is_blocking, addressed_to, tags, keywords**\nA Question needs an answer from someone else, especially if blocking. This branch preserves what was asked — it never answers the question and never guesses who should respond.\n\n`is_blocking` is true ONLY if the message explicitly says this is urgent/blocking/needed before something else can proceed — never inferred from tone. `addressed_to` is filled ONLY if a specific person/role is named in the text — otherwise null.\n\nNo duplicate-check step here (unlike Idea) — kept intentionally simple.",
+        "height": 180,
+        "width": 1800,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1300, 180],
+      "id": "c011a000-0000-4000-8000-000000000017",
+      "name": "Sticky - Question Branch Explanation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            { "id": "4a2b3c4d-0004-4000-8000-000000000001", "leftValue": "={{ $json.content_text }}", "rightValue": "", "operator": { "type": "string", "operation": "notEmpty", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1040, 400],
+      "id": "c011a000-0000-4000-8000-000000000018",
+      "name": "Validate Question Content"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const content = $json.content_text;\nconst instructions = `You are extracting a QUESTION raised in a Telegram discussion for a training program's manager dashboard. A Question is something that needs an answer from someone else, especially if it is blocking progress. Your job is to preserve what was asked - you never answer the question yourself, and you never guess who should respond or what the answer might be.\n\nRead the submitted message and produce:\n- title: a short, specific title (under 8 words)\n- summary: the question itself, restated clearly if needed, but not answered or resolved\n- is_blocking: true ONLY if the message explicitly says this is urgent, blocking, or needed before something else can proceed. Do not infer urgency from tone or phrasing alone - if it is not stated, use false.\n- addressed_to: the specific person or role the question is directed at, ONLY if explicitly named in the message (e.g. a mention, or \"can someone from the design team...\"). If no one is named, use null. Never guess who should answer.\n- tags: short lowercase topical labels\n- keywords: key terms useful for future search\n\nNever add information, an answer, or a name that is not present in the message. Respond with JSON only, matching the given schema exactly.`;\nreturn { json: { ...$json, ai_prompt: `${instructions}\n\nSubmitted question:\n${content}` } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 400],
+      "id": "c011a000-0000-4000-8000-000000000019",
+      "name": "Prepare Question Prompt"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $json.ai_prompt }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'object', properties: { title: { type: 'string' }, summary: { type: 'string' }, is_blocking: { type: 'boolean' }, addressed_to: { type: 'string', nullable: true }, tags: { type: 'array', items: { type: 'string' } }, keywords: { type: 'array', items: { type: 'string' } } }, required: ['title', 'summary', 'is_blocking', 'tags', 'keywords'] } } }) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "x-goog-api-key", "value": "REPLACE_WITH_GEMINI_API_KEY" }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1600, 400],
+      "id": "c011a000-0000-4000-8000-00000000001a",
+      "name": "Call Gemini - Question"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $json.candidates?.[0]?.content?.parts?.[0]?.text;\nlet parsed;\ntry {\n  parsed = JSON.parse(raw);\n} catch (e) {\n  return { json: { status: 'error', title: '', summary: 'Could not parse the AI response - please try again.', is_blocking: false, addressed_to: null, tags: [], keywords: [] } };\n}\nconst ok = parsed && typeof parsed.title === 'string' && typeof parsed.summary === 'string' && typeof parsed.is_blocking === 'boolean' && Array.isArray(parsed.tags) && Array.isArray(parsed.keywords);\nif (!ok) {\n  return { json: { status: 'error', title: '', summary: 'AI response was missing required fields - please try again.', is_blocking: false, addressed_to: null, tags: [], keywords: [] } };\n}\nreturn { json: { status: 'ok', title: parsed.title, summary: parsed.summary, is_blocking: parsed.is_blocking, addressed_to: parsed.addressed_to ?? null, tags: parsed.tags, keywords: parsed.keywords } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1900, 400],
+      "id": "c011a000-0000-4000-8000-00000000001b",
+      "name": "Validate Question Output"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "poc_questions",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "question_text", "fieldValue": "={{ $('Parse Command').item.json.content_text }}" },
+            { "fieldId": "title", "fieldValue": "={{ $json.title }}" },
+            { "fieldId": "summary", "fieldValue": "={{ $json.summary }}" },
+            { "fieldId": "is_blocking", "fieldValue": "={{ $json.is_blocking }}" },
+            { "fieldId": "addressed_to", "fieldValue": "={{ $json.addressed_to }}" },
+            { "fieldId": "tags", "fieldValue": "={{ $json.tags }}" },
+            { "fieldId": "keywords", "fieldValue": "={{ $json.keywords }}" },
+            { "fieldId": "telegram_display_name", "fieldValue": "={{ $('Parse Command').item.json.telegram_display_name }}" },
+            { "fieldId": "telegram_chat_id", "fieldValue": "={{ String($('Parse Command').item.json.chat_id) }}" },
+            { "fieldId": "telegram_chat_title", "fieldValue": "={{ $('Parse Command').item.json.chat_title }}" },
+            { "fieldId": "telegram_message_id", "fieldValue": "={{ $('Parse Command').item.json.message_id != null ? String($('Parse Command').item.json.message_id) : null }}" }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2200, 400],
+      "id": "c011a000-0000-4000-8000-00000000001c",
+      "name": "Insert Question to Supabase",
+      "credentials": {
+        "supabaseApi": {
+          "id": "REPLACE_ME",
+          "name": "🔧 REPLACE ME — Supabase Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const v = $('Validate Question Output').item.json;\nif (v.status !== 'ok') {\n  return { json: { reply_text: `⚠️ ${v.summary}` } };\n}\nlet text = v.is_blocking\n  ? `🚨 Question saved (blocking)!\n📌 ${v.title}\n${v.summary}`\n  : `❓ Question saved!\n📌 ${v.title}\n${v.summary}`;\nif (v.addressed_to) text += `\n➡️ For: ${v.addressed_to}`;\nreturn { json: { reply_text: text } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2500, 400],
+      "id": "c011a000-0000-4000-8000-00000000001d",
+      "name": "Format Question Reply"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Command').item.json.chat_id }}",
+        "text": "={{ $json.reply_text }}",
+        "additionalFields": { "appendAttribution": false }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2800, 400],
+      "id": "c011a000-0000-4000-8000-00000000001e",
+      "name": "Reply - Question Saved",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "🔧 REPLACE ME — Telegram Bot Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "⚠️ Please include your question after the /question command.\nExample: /question Will the deadline move to next month?",
+        "additionalFields": { "appendAttribution": false }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1300, 620],
+      "id": "c011a000-0000-4000-8000-00000000001f",
+      "name": "Reply - Missing Question Text",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "🔧 REPLACE ME — Telegram Bot Credential"
+        }
+      }
+    },
+
+    {
+      "parameters": {
+        "content": "**SUGGESTION — type-specific schema: title, summary, target, tags, keywords**\nA Suggestion proposes a change or improvement to something that ALREADY EXISTS — not a brand-new idea. This branch preserves what should change and why; it never invents a justification the submitter didn't give.\n\n`target` is filled ONLY if the existing thing being improved is explicitly named (e.g. \"the onboarding flow\") — otherwise null. This is Suggestion's distinguishing field versus Idea, which has no \"existing thing\" to point at.",
+        "height": 180,
+        "width": 1800,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1300, 680],
+      "id": "c011a000-0000-4000-8000-000000000020",
+      "name": "Sticky - Suggestion Branch Explanation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            { "id": "4a2b3c4d-0004-4000-8000-000000000002", "leftValue": "={{ $json.content_text }}", "rightValue": "", "operator": { "type": "string", "operation": "notEmpty", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1040, 900],
+      "id": "c011a000-0000-4000-8000-000000000021",
+      "name": "Validate Suggestion Content"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const content = $json.content_text;\nconst instructions = `You are extracting a SUGGESTION raised in a Telegram discussion for a training program's manager dashboard. A Suggestion proposes a change or improvement to something that already exists - it is not a brand-new idea. Your job is to preserve what should change and why - never invent a justification the submitter did not give, and never turn this into a new-idea pitch.\n\nRead the submitted message and produce:\n- title: a short, specific title (under 8 words)\n- summary: one to two sentences describing what should change and, only if stated, why\n- target: the existing thing being improved (a feature, process, document, etc.), ONLY if explicitly named in the message. If it is not named, use null. Never guess what it targets.\n- tags: short lowercase topical labels\n- keywords: key terms useful for future search\n\nNever add information not present in the message. Respond with JSON only, matching the given schema exactly.`;\nreturn { json: { ...$json, ai_prompt: `${instructions}\n\nSubmitted suggestion:\n${content}` } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 900],
+      "id": "c011a000-0000-4000-8000-000000000022",
+      "name": "Prepare Suggestion Prompt"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $json.ai_prompt }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'object', properties: { title: { type: 'string' }, summary: { type: 'string' }, target: { type: 'string', nullable: true }, tags: { type: 'array', items: { type: 'string' } }, keywords: { type: 'array', items: { type: 'string' } } }, required: ['title', 'summary', 'tags', 'keywords'] } } }) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "x-goog-api-key", "value": "REPLACE_WITH_GEMINI_API_KEY" }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1600, 900],
+      "id": "c011a000-0000-4000-8000-000000000023",
+      "name": "Call Gemini - Suggestion"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $json.candidates?.[0]?.content?.parts?.[0]?.text;\nlet parsed;\ntry {\n  parsed = JSON.parse(raw);\n} catch (e) {\n  return { json: { status: 'error', title: '', summary: 'Could not parse the AI response - please try again.', target: null, tags: [], keywords: [] } };\n}\nconst ok = parsed && typeof parsed.title === 'string' && typeof parsed.summary === 'string' && Array.isArray(parsed.tags) && Array.isArray(parsed.keywords);\nif (!ok) {\n  return { json: { status: 'error', title: '', summary: 'AI response was missing required fields - please try again.', target: null, tags: [], keywords: [] } };\n}\nreturn { json: { status: 'ok', title: parsed.title, summary: parsed.summary, target: parsed.target ?? null, tags: parsed.tags, keywords: parsed.keywords } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1900, 900],
+      "id": "c011a000-0000-4000-8000-000000000024",
+      "name": "Validate Suggestion Output"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "poc_suggestions",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "suggestion_text", "fieldValue": "={{ $('Parse Command').item.json.content_text }}" },
+            { "fieldId": "title", "fieldValue": "={{ $json.title }}" },
+            { "fieldId": "summary", "fieldValue": "={{ $json.summary }}" },
+            { "fieldId": "target", "fieldValue": "={{ $json.target }}" },
+            { "fieldId": "tags", "fieldValue": "={{ $json.tags }}" },
+            { "fieldId": "keywords", "fieldValue": "={{ $json.keywords }}" },
+            { "fieldId": "telegram_display_name", "fieldValue": "={{ $('Parse Command').item.json.telegram_display_name }}" },
+            { "fieldId": "telegram_chat_id", "fieldValue": "={{ String($('Parse Command').item.json.chat_id) }}" },
+            { "fieldId": "telegram_chat_title", "fieldValue": "={{ $('Parse Command').item.json.chat_title }}" },
+            { "fieldId": "telegram_message_id", "fieldValue": "={{ $('Parse Command').item.json.message_id != null ? String($('Parse Command').item.json.message_id) : null }}" }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2200, 900],
+      "id": "c011a000-0000-4000-8000-000000000025",
+      "name": "Insert Suggestion to Supabase",
+      "credentials": {
+        "supabaseApi": {
+          "id": "REPLACE_ME",
+          "name": "🔧 REPLACE ME — Supabase Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const v = $('Validate Suggestion Output').item.json;\nif (v.status !== 'ok') {\n  return { json: { reply_text: `⚠️ ${v.summary}` } };\n}\nlet text = `💡 Suggestion saved!\n📌 ${v.title}\n${v.summary}`;\nif (v.target) text += `\n🎯 Target: ${v.target}`;\nreturn { json: { reply_text: text } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2500, 900],
+      "id": "c011a000-0000-4000-8000-000000000026",
+      "name": "Format Suggestion Reply"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Command').item.json.chat_id }}",
+        "text": "={{ $json.reply_text }}",
+        "additionalFields": { "appendAttribution": false }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2800, 900],
+      "id": "c011a000-0000-4000-8000-000000000027",
+      "name": "Reply - Suggestion Saved",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "🔧 REPLACE ME — Telegram Bot Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "⚠️ Please include your suggestion after the /suggestion command.\nExample: /suggestion Add a dark mode toggle to the settings page",
+        "additionalFields": { "appendAttribution": false }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1300, 1120],
+      "id": "c011a000-0000-4000-8000-000000000028",
+      "name": "Reply - Missing Suggestion Text",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "🔧 REPLACE ME — Telegram Bot Credential"
+        }
+      }
+    },
+
+    {
+      "parameters": {
+        "content": "**DECISION — type-specific schema: title, summary, rationale, tags, keywords**\nA Decision is a choice already made or agreed on, even if stated briefly. This branch's ONLY job is to record it — it never evaluates whether the decision was a good one, never suggests alternatives, and never invents a rationale that wasn't given.\n\n`rationale` is filled ONLY if the message explicitly states a reason — otherwise null. No duplicate-check step here, unlike Idea.",
+        "height": 180,
+        "width": 1800,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1300, 1180],
+      "id": "c011a000-0000-4000-8000-000000000029",
+      "name": "Sticky - Decision Branch Explanation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            { "id": "4a2b3c4d-0004-4000-8000-000000000003", "leftValue": "={{ $json.content_text }}", "rightValue": "", "operator": { "type": "string", "operation": "notEmpty", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1040, 1400],
+      "id": "c011a000-0000-4000-8000-00000000002a",
+      "name": "Validate Decision Content"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const content = $json.content_text;\nconst instructions = `You are extracting a DECISION raised in a Telegram discussion for a training program's manager dashboard. A Decision is a choice that has already been made or agreed on, even if stated briefly. Your ONLY job is to record what was decided - you do not evaluate whether it was a good decision, you do not suggest alternatives, and you do not add a rationale that was not stated.\n\nRead the submitted message and produce:\n- title: a short, specific title (under 8 words)\n- summary: one to two sentences describing what was decided, stated factually\n- rationale: the reason given for the decision, ONLY if the message explicitly states one. If no reason is given, use null. Never invent one.\n- tags: short lowercase topical labels\n- keywords: key terms useful for future search\n\nNever add information not present in the message. Respond with JSON only, matching the given schema exactly.`;\nreturn { json: { ...$json, ai_prompt: `${instructions}\n\nSubmitted decision:\n${content}` } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 1400],
+      "id": "c011a000-0000-4000-8000-00000000002b",
+      "name": "Prepare Decision Prompt"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $json.ai_prompt }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'object', properties: { title: { type: 'string' }, summary: { type: 'string' }, rationale: { type: 'string', nullable: true }, tags: { type: 'array', items: { type: 'string' } }, keywords: { type: 'array', items: { type: 'string' } } }, required: ['title', 'summary', 'tags', 'keywords'] } } }) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "x-goog-api-key", "value": "REPLACE_WITH_GEMINI_API_KEY" }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1600, 1400],
+      "id": "c011a000-0000-4000-8000-00000000002c",
+      "name": "Call Gemini - Decision"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $json.candidates?.[0]?.content?.parts?.[0]?.text;\nlet parsed;\ntry {\n  parsed = JSON.parse(raw);\n} catch (e) {\n  return { json: { status: 'error', title: '', summary: 'Could not parse the AI response - please try again.', rationale: null, tags: [], keywords: [] } };\n}\nconst ok = parsed && typeof parsed.title === 'string' && typeof parsed.summary === 'string' && Array.isArray(parsed.tags) && Array.isArray(parsed.keywords);\nif (!ok) {\n  return { json: { status: 'error', title: '', summary: 'AI response was missing required fields - please try again.', rationale: null, tags: [], keywords: [] } };\n}\nreturn { json: { status: 'ok', title: parsed.title, summary: parsed.summary, rationale: parsed.rationale ?? null, tags: parsed.tags, keywords: parsed.keywords } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1900, 1400],
+      "id": "c011a000-0000-4000-8000-00000000002d",
+      "name": "Validate Decision Output"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "poc_decisions",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "decision_text", "fieldValue": "={{ $('Parse Command').item.json.content_text }}" },
+            { "fieldId": "title", "fieldValue": "={{ $json.title }}" },
+            { "fieldId": "summary", "fieldValue": "={{ $json.summary }}" },
+            { "fieldId": "rationale", "fieldValue": "={{ $json.rationale }}" },
+            { "fieldId": "tags", "fieldValue": "={{ $json.tags }}" },
+            { "fieldId": "keywords", "fieldValue": "={{ $json.keywords }}" },
+            { "fieldId": "telegram_display_name", "fieldValue": "={{ $('Parse Command').item.json.telegram_display_name }}" },
+            { "fieldId": "telegram_chat_id", "fieldValue": "={{ String($('Parse Command').item.json.chat_id) }}" },
+            { "fieldId": "telegram_chat_title", "fieldValue": "={{ $('Parse Command').item.json.chat_title }}" },
+            { "fieldId": "telegram_message_id", "fieldValue": "={{ $('Parse Command').item.json.message_id != null ? String($('Parse Command').item.json.message_id) : null }}" }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2200, 1400],
+      "id": "c011a000-0000-4000-8000-00000000002e",
+      "name": "Insert Decision to Supabase",
+      "credentials": {
+        "supabaseApi": {
+          "id": "REPLACE_ME",
+          "name": "🔧 REPLACE ME — Supabase Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const v = $('Validate Decision Output').item.json;\nif (v.status !== 'ok') {\n  return { json: { reply_text: `⚠️ ${v.summary}` } };\n}\nlet text = `🧭 Decision saved!\n📌 ${v.title}\n${v.summary}`;\nif (v.rationale) text += `\n💭 Rationale: ${v.rationale}`;\nreturn { json: { reply_text: text } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2500, 1400],
+      "id": "c011a000-0000-4000-8000-00000000002f",
+      "name": "Format Decision Reply"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Command').item.json.chat_id }}",
+        "text": "={{ $json.reply_text }}",
+        "additionalFields": { "appendAttribution": false }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2800, 1400],
+      "id": "c011a000-0000-4000-8000-000000000030",
+      "name": "Reply - Decision Saved",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "🔧 REPLACE ME — Telegram Bot Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "⚠️ Please include the decision after the /decision command.\nExample: /decision We're using Supabase instead of Firebase for the database",
+        "additionalFields": { "appendAttribution": false }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1300, 1620],
+      "id": "c011a000-0000-4000-8000-000000000031",
+      "name": "Reply - Missing Decision Text",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "🔧 REPLACE ME — Telegram Bot Credential"
+        }
+      }
+    },
+
+    {
+      "parameters": {
+        "content": "**ACTION ITEM — type-specific schema: title, summary, owner, due, tags, keywords**\nAn Action Item is a task someone needs to do, self- or other-assigned. `owner` and `due` are filled ONLY if explicitly stated — never assumed.\n\n`due` is captured as the submitter's own phrasing (e.g. \"Thursday\", \"before the demo\") and is deliberately NOT resolved to a calendar date — the model has no reliable \"today\" reference, and normalizing it would manufacture false precision. Resolve it downstream (dashboard/backend) where you control the reference date, not here.",
+        "height": 180,
+        "width": 1800,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1300, 1680],
+      "id": "c011a000-0000-4000-8000-000000000032",
+      "name": "Sticky - Action Branch Explanation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            { "id": "4a2b3c4d-0004-4000-8000-000000000004", "leftValue": "={{ $json.content_text }}", "rightValue": "", "operator": { "type": "string", "operation": "notEmpty", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1040, 1900],
+      "id": "c011a000-0000-4000-8000-000000000033",
+      "name": "Validate Action Content"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const content = $json.content_text;\nconst instructions = `You are extracting an ACTION ITEM raised in a Telegram discussion for a training program's manager dashboard. An Action Item is a task someone needs to do, whether self-assigned or assigned to someone else. Preserve the task exactly as stated.\n\nRead the submitted message and produce:\n- title: a short, specific title (under 8 words)\n- summary: one to two sentences describing the task itself\n- owner: who is responsible, ONLY if explicitly stated (including \"I\"/self-assigned - restate as the submitter). If no owner is stated, use null. Never assume or guess an owner.\n- due: any deadline or timing mentioned, copied close to how it was stated (e.g. \"Thursday\", \"before the demo\"). Do NOT resolve it to a calendar date or add precision that was not given. If nothing was said, use null.\n- tags: short lowercase topical labels\n- keywords: key terms useful for future search\n\nNever add information not present in the message. Respond with JSON only, matching the given schema exactly.`;\nreturn { json: { ...$json, ai_prompt: `${instructions}\n\nSubmitted action item:\n${content}` } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 1900],
+      "id": "c011a000-0000-4000-8000-000000000034",
+      "name": "Prepare Action Prompt"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $json.ai_prompt }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'object', properties: { title: { type: 'string' }, summary: { type: 'string' }, owner: { type: 'string', nullable: true }, due: { type: 'string', nullable: true }, tags: { type: 'array', items: { type: 'string' } }, keywords: { type: 'array', items: { type: 'string' } } }, required: ['title', 'summary', 'tags', 'keywords'] } } }) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "x-goog-api-key", "value": "REPLACE_WITH_GEMINI_API_KEY" }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1600, 1900],
+      "id": "c011a000-0000-4000-8000-000000000035",
+      "name": "Call Gemini - Action"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $json.candidates?.[0]?.content?.parts?.[0]?.text;\nlet parsed;\ntry {\n  parsed = JSON.parse(raw);\n} catch (e) {\n  return { json: { status: 'error', title: '', summary: 'Could not parse the AI response - please try again.', owner: null, due: null, tags: [], keywords: [] } };\n}\nconst ok = parsed && typeof parsed.title === 'string' && typeof parsed.summary === 'string' && Array.isArray(parsed.tags) && Array.isArray(parsed.keywords);\nif (!ok) {\n  return { json: { status: 'error', title: '', summary: 'AI response was missing required fields - please try again.', owner: null, due: null, tags: [], keywords: [] } };\n}\nreturn { json: { status: 'ok', title: parsed.title, summary: parsed.summary, owner: parsed.owner ?? null, due: parsed.due ?? null, tags: parsed.tags, keywords: parsed.keywords } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1900, 1900],
+      "id": "c011a000-0000-4000-8000-000000000036",
+      "name": "Validate Action Output"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "poc_actions",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "action_text", "fieldValue": "={{ $('Parse Command').item.json.content_text }}" },
+            { "fieldId": "title", "fieldValue": "={{ $json.title }}" },
+            { "fieldId": "summary", "fieldValue": "={{ $json.summary }}" },
+            { "fieldId": "owner", "fieldValue": "={{ $json.owner }}" },
+            { "fieldId": "due", "fieldValue": "={{ $json.due }}" },
+            { "fieldId": "tags", "fieldValue": "={{ $json.tags }}" },
+            { "fieldId": "keywords", "fieldValue": "={{ $json.keywords }}" },
+            { "fieldId": "telegram_display_name", "fieldValue": "={{ $('Parse Command').item.json.telegram_display_name }}" },
+            { "fieldId": "telegram_chat_id", "fieldValue": "={{ String($('Parse Command').item.json.chat_id) }}" },
+            { "fieldId": "telegram_chat_title", "fieldValue": "={{ $('Parse Command').item.json.chat_title }}" },
+            { "fieldId": "telegram_message_id", "fieldValue": "={{ $('Parse Command').item.json.message_id != null ? String($('Parse Command').item.json.message_id) : null }}" }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2200, 1900],
+      "id": "c011a000-0000-4000-8000-000000000037",
+      "name": "Insert Action to Supabase",
+      "credentials": {
+        "supabaseApi": {
+          "id": "REPLACE_ME",
+          "name": "🔧 REPLACE ME — Supabase Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const v = $('Validate Action Output').item.json;\nif (v.status !== 'ok') {\n  return { json: { reply_text: `⚠️ ${v.summary}` } };\n}\nlet text = `📋 Action item saved!\n📌 ${v.title}\n${v.summary}`;\nif (v.owner) text += `\n👤 Owner: ${v.owner}`;\nif (v.due) text += `\n📅 Due: ${v.due}`;\nreturn { json: { reply_text: text } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2500, 1900],
+      "id": "c011a000-0000-4000-8000-000000000038",
+      "name": "Format Action Reply"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Command').item.json.chat_id }}",
+        "text": "={{ $json.reply_text }}",
+        "additionalFields": { "appendAttribution": false }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2800, 1900],
+      "id": "c011a000-0000-4000-8000-000000000039",
+      "name": "Reply - Action Saved",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "🔧 REPLACE ME — Telegram Bot Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "⚠️ Please include the task after the /action command.\nExample: /action Prepare the demo slides before Thursday's review",
+        "additionalFields": { "appendAttribution": false }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1300, 2120],
+      "id": "c011a000-0000-4000-8000-00000000003a",
+      "name": "Reply - Missing Action Text",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "🔧 REPLACE ME — Telegram Bot Credential"
+        }
+      }
+    },
+
+    {
+      "parameters": {
+        "content": "**OBSERVATION — deliberately the same schema as title/summary/tags/keywords, no extra fields**\nAn Observation is a factual note about what's happening that doesn't fit the other five categories. Unlike Suggestion/Decision/Action, it gets no extra structured field — adding one (e.g. a \"recommendation\") would nudge the model toward interpreting or proposing a fix, which is exactly what this category is NOT. The prompt explicitly forbids turning an observation into a suggestion.",
+        "height": 180,
+        "width": 1800,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1300, 2180],
+      "id": "c011a000-0000-4000-8000-00000000003b",
+      "name": "Sticky - Observation Branch Explanation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            { "id": "4a2b3c4d-0004-4000-8000-000000000005", "leftValue": "={{ $json.content_text }}", "rightValue": "", "operator": { "type": "string", "operation": "notEmpty", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1040, 2400],
+      "id": "c011a000-0000-4000-8000-00000000003c",
+      "name": "Validate Observation Content"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const content = $json.content_text;\nconst instructions = `You are extracting an OBSERVATION raised in a Telegram discussion for a training program's manager dashboard. An Observation is a factual note about what's happening that does not fit Idea, Suggestion, Decision, Action Item, or Question. Your job is to restate the fact clearly - not to propose a fix, not to suggest a change, and not to add interpretation.\n\nRead the submitted message and produce:\n- title: a short, specific title (under 8 words)\n- summary: one to two sentences, strictly factual - describe what is happening, not what should be done about it\n- tags: short lowercase topical labels\n- keywords: key terms useful for future search\n\nIf the message actually proposes a change or fix, that is a Suggestion, not an Observation - still summarize only what was stated, do not add a recommendation of your own. Never add information not present in the message. Respond with JSON only, matching the given schema exactly.`;\nreturn { json: { ...$json, ai_prompt: `${instructions}\n\nSubmitted observation:\n${content}` } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 2400],
+      "id": "c011a000-0000-4000-8000-00000000003d",
+      "name": "Prepare Observation Prompt"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $json.ai_prompt }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'object', properties: { title: { type: 'string' }, summary: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } }, keywords: { type: 'array', items: { type: 'string' } } }, required: ['title', 'summary', 'tags', 'keywords'] } } }) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "x-goog-api-key", "value": "REPLACE_WITH_GEMINI_API_KEY" }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1600, 2400],
+      "id": "c011a000-0000-4000-8000-00000000003e",
+      "name": "Call Gemini - Observation"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $json.candidates?.[0]?.content?.parts?.[0]?.text;\nlet parsed;\ntry {\n  parsed = JSON.parse(raw);\n} catch (e) {\n  return { json: { status: 'error', title: '', summary: 'Could not parse the AI response - please try again.', tags: [], keywords: [] } };\n}\nconst ok = parsed && typeof parsed.title === 'string' && typeof parsed.summary === 'string' && Array.isArray(parsed.tags) && Array.isArray(parsed.keywords);\nif (!ok) {\n  return { json: { status: 'error', title: '', summary: 'AI response was missing required fields - please try again.', tags: [], keywords: [] } };\n}\nreturn { json: { status: 'ok', title: parsed.title, summary: parsed.summary, tags: parsed.tags, keywords: parsed.keywords } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1900, 2400],
+      "id": "c011a000-0000-4000-8000-00000000003f",
+      "name": "Validate Observation Output"
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "poc_observations",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "observation_text", "fieldValue": "={{ $('Parse Command').item.json.content_text }}" },
+            { "fieldId": "title", "fieldValue": "={{ $json.title }}" },
+            { "fieldId": "summary", "fieldValue": "={{ $json.summary }}" },
+            { "fieldId": "tags", "fieldValue": "={{ $json.tags }}" },
+            { "fieldId": "keywords", "fieldValue": "={{ $json.keywords }}" },
+            { "fieldId": "telegram_display_name", "fieldValue": "={{ $('Parse Command').item.json.telegram_display_name }}" },
+            { "fieldId": "telegram_chat_id", "fieldValue": "={{ String($('Parse Command').item.json.chat_id) }}" },
+            { "fieldId": "telegram_chat_title", "fieldValue": "={{ $('Parse Command').item.json.chat_title }}" },
+            { "fieldId": "telegram_message_id", "fieldValue": "={{ $('Parse Command').item.json.message_id != null ? String($('Parse Command').item.json.message_id) : null }}" }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2200, 2400],
+      "id": "c011a000-0000-4000-8000-000000000040",
+      "name": "Insert Observation to Supabase",
+      "credentials": {
+        "supabaseApi": {
+          "id": "REPLACE_ME",
+          "name": "🔧 REPLACE ME — Supabase Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const v = $('Validate Observation Output').item.json;\nconst text = v.status === 'ok'\n  ? `👁️ Observation saved!\n📌 ${v.title}\n${v.summary}`\n  : `⚠️ ${v.summary}`;\nreturn { json: { reply_text: text } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2500, 2400],
+      "id": "c011a000-0000-4000-8000-000000000041",
+      "name": "Format Observation Reply"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Command').item.json.chat_id }}",
+        "text": "={{ $json.reply_text }}",
+        "additionalFields": { "appendAttribution": false }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2800, 2400],
+      "id": "c011a000-0000-4000-8000-000000000042",
+      "name": "Reply - Observation Saved",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "🔧 REPLACE ME — Telegram Bot Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "⚠️ Please include what you observed after the /observation command.\nExample: /observation Several students mentioned confusion about the submission process this week",
+        "additionalFields": { "appendAttribution": false }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1300, 2620],
+      "id": "c011a000-0000-4000-8000-000000000043",
+      "name": "Reply - Missing Observation Text",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_ME",
+          "name": "🔧 REPLACE ME — Telegram Bot Credential"
+        }
+      }
     }
   ],
   "connections": {
@@ -369,11 +1105,11 @@
     "Command Router": {
       "main": [
         [{ "node": "Validate Idea Content", "type": "main", "index": 0 }],
-        [{ "node": "Question Agent (Future)", "type": "main", "index": 0 }],
-        [{ "node": "Suggestion Agent (Future)", "type": "main", "index": 0 }],
-        [{ "node": "Decision Agent (Future)", "type": "main", "index": 0 }],
-        [{ "node": "Action Agent (Future)", "type": "main", "index": 0 }],
-        [{ "node": "Observation Agent (Future)", "type": "main", "index": 0 }],
+        [{ "node": "Validate Question Content", "type": "main", "index": 0 }],
+        [{ "node": "Validate Suggestion Content", "type": "main", "index": 0 }],
+        [{ "node": "Validate Decision Content", "type": "main", "index": 0 }],
+        [{ "node": "Validate Action Content", "type": "main", "index": 0 }],
+        [{ "node": "Validate Observation Content", "type": "main", "index": 0 }],
         [{ "node": "Unknown Command (Ignored)", "type": "main", "index": 0 }]
       ]
     },
@@ -388,6 +1124,111 @@
     },
     "Format Idea Reply": {
       "main": [[{ "node": "Reply - Idea Saved", "type": "main", "index": 0 }]]
+    },
+    "Validate Question Content": {
+      "main": [
+        [{ "node": "Prepare Question Prompt", "type": "main", "index": 0 }],
+        [{ "node": "Reply - Missing Question Text", "type": "main", "index": 0 }]
+      ]
+    },
+    "Prepare Question Prompt": {
+      "main": [[{ "node": "Call Gemini - Question", "type": "main", "index": 0 }]]
+    },
+    "Call Gemini - Question": {
+      "main": [[{ "node": "Validate Question Output", "type": "main", "index": 0 }]]
+    },
+    "Validate Question Output": {
+      "main": [[{ "node": "Insert Question to Supabase", "type": "main", "index": 0 }]]
+    },
+    "Insert Question to Supabase": {
+      "main": [[{ "node": "Format Question Reply", "type": "main", "index": 0 }]]
+    },
+    "Format Question Reply": {
+      "main": [[{ "node": "Reply - Question Saved", "type": "main", "index": 0 }]]
+    },
+    "Validate Suggestion Content": {
+      "main": [
+        [{ "node": "Prepare Suggestion Prompt", "type": "main", "index": 0 }],
+        [{ "node": "Reply - Missing Suggestion Text", "type": "main", "index": 0 }]
+      ]
+    },
+    "Prepare Suggestion Prompt": {
+      "main": [[{ "node": "Call Gemini - Suggestion", "type": "main", "index": 0 }]]
+    },
+    "Call Gemini - Suggestion": {
+      "main": [[{ "node": "Validate Suggestion Output", "type": "main", "index": 0 }]]
+    },
+    "Validate Suggestion Output": {
+      "main": [[{ "node": "Insert Suggestion to Supabase", "type": "main", "index": 0 }]]
+    },
+    "Insert Suggestion to Supabase": {
+      "main": [[{ "node": "Format Suggestion Reply", "type": "main", "index": 0 }]]
+    },
+    "Format Suggestion Reply": {
+      "main": [[{ "node": "Reply - Suggestion Saved", "type": "main", "index": 0 }]]
+    },
+    "Validate Decision Content": {
+      "main": [
+        [{ "node": "Prepare Decision Prompt", "type": "main", "index": 0 }],
+        [{ "node": "Reply - Missing Decision Text", "type": "main", "index": 0 }]
+      ]
+    },
+    "Prepare Decision Prompt": {
+      "main": [[{ "node": "Call Gemini - Decision", "type": "main", "index": 0 }]]
+    },
+    "Call Gemini - Decision": {
+      "main": [[{ "node": "Validate Decision Output", "type": "main", "index": 0 }]]
+    },
+    "Validate Decision Output": {
+      "main": [[{ "node": "Insert Decision to Supabase", "type": "main", "index": 0 }]]
+    },
+    "Insert Decision to Supabase": {
+      "main": [[{ "node": "Format Decision Reply", "type": "main", "index": 0 }]]
+    },
+    "Format Decision Reply": {
+      "main": [[{ "node": "Reply - Decision Saved", "type": "main", "index": 0 }]]
+    },
+    "Validate Action Content": {
+      "main": [
+        [{ "node": "Prepare Action Prompt", "type": "main", "index": 0 }],
+        [{ "node": "Reply - Missing Action Text", "type": "main", "index": 0 }]
+      ]
+    },
+    "Prepare Action Prompt": {
+      "main": [[{ "node": "Call Gemini - Action", "type": "main", "index": 0 }]]
+    },
+    "Call Gemini - Action": {
+      "main": [[{ "node": "Validate Action Output", "type": "main", "index": 0 }]]
+    },
+    "Validate Action Output": {
+      "main": [[{ "node": "Insert Action to Supabase", "type": "main", "index": 0 }]]
+    },
+    "Insert Action to Supabase": {
+      "main": [[{ "node": "Format Action Reply", "type": "main", "index": 0 }]]
+    },
+    "Format Action Reply": {
+      "main": [[{ "node": "Reply - Action Saved", "type": "main", "index": 0 }]]
+    },
+    "Validate Observation Content": {
+      "main": [
+        [{ "node": "Prepare Observation Prompt", "type": "main", "index": 0 }],
+        [{ "node": "Reply - Missing Observation Text", "type": "main", "index": 0 }]
+      ]
+    },
+    "Prepare Observation Prompt": {
+      "main": [[{ "node": "Call Gemini - Observation", "type": "main", "index": 0 }]]
+    },
+    "Call Gemini - Observation": {
+      "main": [[{ "node": "Validate Observation Output", "type": "main", "index": 0 }]]
+    },
+    "Validate Observation Output": {
+      "main": [[{ "node": "Insert Observation to Supabase", "type": "main", "index": 0 }]]
+    },
+    "Insert Observation to Supabase": {
+      "main": [[{ "node": "Format Observation Reply", "type": "main", "index": 0 }]]
+    },
+    "Format Observation Reply": {
+      "main": [[{ "node": "Reply - Observation Saved", "type": "main", "index": 0 }]]
     }
   },
   "settings": {

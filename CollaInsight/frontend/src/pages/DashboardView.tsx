@@ -2,36 +2,36 @@ import React, { useMemo, useState } from "react";
 import { BookOpen, Users, MessageSquare, Clock3, CalendarDays, HelpCircle, Hash } from "lucide-react";
 
 import { Badge, useThemeCtx } from "@/shared";
-import { KnowledgeItem } from "@/lib/api";
-import { useIdeas, relativeTime, topTags } from "@/lib/useIdeas";
-import { isSameCalendarDay, weeklyGrowth, needsFollowUp } from "@/lib/insights";
+import { KnowledgeFeedItem } from "@/lib/api";
+import { useKnowledge, relativeTime, topTags } from "@/lib/useKnowledge";
+import { isSameCalendarDay, weeklyGrowth, needsFollowUp, openQuestionsOf } from "@/lib/insights";
 import { KnowledgeDetailPanel } from "@/components/KnowledgeDetail";
 import { GrowthChip } from "@/components/GrowthChip";
 
 export function DashboardView() {
   const { isLight, fg, mutedFg, subFg, cardBg, border, hoverBg, divider } = useThemeCtx();
-  const { ideas, loading, error } = useIdeas();
-  const [selected, setSelected] = useState<KnowledgeItem | null>(null);
+  const { items, loading, error } = useKnowledge();
+  const [selected, setSelected] = useState<KnowledgeFeedItem | null>(null);
 
   const stats = useMemo(() => {
-    const contributors = new Set(ideas.map(i => i.telegram_display_name).filter(Boolean));
-    const groups = new Set(ideas.map(i => i.telegram_chat_title).filter(Boolean));
-    const capturedToday = ideas.filter(i => isSameCalendarDay(i.created_at)).length;
-    const growth = weeklyGrowth(ideas);
-    const followUp = needsFollowUp(ideas);
+    const contributors = new Set(items.map(i => i.telegram_display_name).filter(Boolean));
+    const groups = new Set(items.map(i => i.telegram_chat_title).filter(Boolean));
+    const capturedToday = items.filter(i => isSameCalendarDay(i.created_at)).length;
+    const growth = weeklyGrowth(items);
+    const followUp = needsFollowUp(items);
     return {
-      total: ideas.length,
+      total: items.length,
       capturedToday,
       contributors: contributors.size,
       groups: groups.size,
       growth,
       followUpCount: followUp.length,
     };
-  }, [ideas]);
+  }, [items]);
 
-  const recent = ideas.slice(0, 6);
-  const tags = useMemo(() => topTags(ideas, 8), [ideas]);
-  const followUpPreview = useMemo(() => needsFollowUp(ideas).slice(0, 3), [ideas]);
+  const recent = items.slice(0, 6);
+  const tags = useMemo(() => topTags(items, 8), [items]);
+  const followUpPreview = useMemo(() => needsFollowUp(items).slice(0, 3), [items]);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto space-y-4 sm:space-y-6">
@@ -50,13 +50,13 @@ export function DashboardView() {
               </div>
               {loading ? (
                 <p className="text-sm" style={{ color: mutedFg }}>Loading…</p>
-              ) : ideas.length === 0 ? (
+              ) : items.length === 0 ? (
                 <p className="text-sm leading-relaxed" style={{ color: mutedFg }}>
-                  No ideas captured yet. Send <strong style={{ color: fg }}>/idea &lt;your idea&gt;</strong> to the Telegram bot to see it appear here.
+                  No knowledge captured yet. Send <strong style={{ color: fg }}>/idea</strong>, <strong style={{ color: fg }}>/question</strong>, <strong style={{ color: fg }}>/suggestion</strong>, <strong style={{ color: fg }}>/decision</strong>, <strong style={{ color: fg }}>/action</strong>, or <strong style={{ color: fg }}>/observation</strong> to the Telegram bot to see it appear here.
                 </p>
               ) : (
                 <p className="text-sm leading-relaxed" style={{ color: mutedFg }}>
-                  <strong style={{ color: fg }}>{stats.total} idea{stats.total === 1 ? "" : "s"}</strong> captured
+                  <strong style={{ color: fg }}>{stats.total} item{stats.total === 1 ? "" : "s"}</strong> captured
                   {stats.contributors > 0 && <> from <strong style={{ color: fg }}>{stats.contributors} contributor{stats.contributors === 1 ? "" : "s"}</strong></>}
                   {stats.groups > 0 && <> across <strong style={{ color: fg }}>{stats.groups} Telegram group{stats.groups === 1 ? "" : "s"}</strong></>}.
                   {" "}Most recent: <strong style={{ color: fg }}>{recent[0]?.title}</strong> ({relativeTime(recent[0]?.created_at)}).
@@ -119,7 +119,7 @@ export function DashboardView() {
             </div>
           )}
           {!loading && recent.map((item, idx, arr) => (
-            <div key={item.id} onClick={() => setSelected(item)}
+            <div key={`${item.knowledge_type}-${item.source_id}`} onClick={() => setSelected(item)}
               className="px-4 sm:px-5 py-3.5 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 group cursor-pointer"
               style={{ borderBottom: idx < arr.length - 1 ? `1px solid ${divider}` : "none" }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = hoverBg}
@@ -178,14 +178,14 @@ export function DashboardView() {
             {!loading && followUpPreview.length > 0 && (
               <div>
                 {followUpPreview.map(item => (
-                  <div key={item.id} onClick={() => setSelected(item)}
+                  <div key={`${item.knowledge_type}-${item.source_id}`} onClick={() => setSelected(item)}
                     className="px-4 py-2.5 flex items-center justify-between gap-2 cursor-pointer transition-all"
                     onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = hoverBg}
                     onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
                   >
                     <span className="text-xs truncate" style={{ color: fg }}>{item.title}</span>
                     <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: "rgba(245,158,11,0.1)", color: "#F59E0B" }}>
-                      {item.open_questions.length}
+                      {openQuestionsOf(item).length}
                     </span>
                   </div>
                 ))}

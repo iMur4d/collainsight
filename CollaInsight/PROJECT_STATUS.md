@@ -32,10 +32,13 @@ This document provides a quick overview of where the project is at any given tim
 - [x] **Milestone 5:** Phase 1 - Workflow Validation (Telegram → n8n → AI → JSON) — **validated live end-to-end on 2026-08-06**, real Telegram message through n8n Cloud, the backend, and back
 - [x] **Milestone 6 (PoC only):** Backend + Idea Agent — FastAPI + LangGraph Idea Agent live, writing to a minimal `poc_ideas` Supabase table. **Not** the production `KnowledgeItem` schema in `docs/engineering/07_DATABASE_SCHEMA.md` — that's still Milestone 6's real remaining work.
 - [x] **Milestone 7 (PoC only):** Dashboard, Knowledge, and AI Insights pages all read live data from a new `GET /api/ideas` backend endpoint — no fake metrics, no fake charts. No auth, no manager status/review workflow, no pagination.
+- [x] **Milestone 10:** All six slash commands live (2026-08-12) — `/question`, `/suggestion`, `/decision`, `/action`, `/observation` implemented as n8n-native Gemini extraction + deterministic validation, each with its own type-specific schema (not a shared generic one). `/idea` unchanged, still backend-owned.
+- [x] **Milestone 11:** Human confirmation before storage (2026-08-12) — every one of the six commands' extracted result is held in a temporary `pending_knowledge` record and previewed privately to the submitter via Telegram DM with Save/Cancel, before anything reaches permanent storage. A private-DM-unavailable fallback safely instructs the submitter in the group without exposing the extracted content there.
+- [x] **Milestone 12 (PoC only):** Insights AI (2026-08-12) — `POST /api/insights/chat`, read-only grounded Q&A over confirmed knowledge via a restricted `ai_knowledge_feed` view and a dedicated least-privilege `ai_readonly` Postgres role. The access boundary (can read the view, cannot read or write the six raw tables) has been verified live, not assumed.
 - [ ] **Milestone 8:** Phase 4 - Authentication & RBAC
 - [ ] **Milestone 9:** Phase 5 - Polish, Error Handling & MVP Release
 
-**Only the Idea Agent is implemented** of the six planned extraction agents (Idea/Suggestion/Decision/Action/Question/Observation). The other five exist as routed-but-empty placeholders in the n8n workflow — intentional, deferred to the week before the final presentation, not a gap in current work.
+**All six extraction agents are now implemented** (Idea/Question/Suggestion/Decision/Action/Observation) — this supersedes the earlier note that only the Idea Agent was live. **Known issue, not yet fixed:** the five n8n `Insert <Type> to Supabase` nodes have a malformed expression syntax (`={ ... }` instead of `={{ ... }}`) that will write literal placeholder text instead of real data on Save, until corrected.
 
 </milestones>
 
@@ -44,6 +47,16 @@ This document provides a quick overview of where the project is at any given tim
 <changelog>
 
 ## Version History & Updates
+
+### Recent Updates (2026-08-12)
+- **All five remaining slash commands implemented in n8n**, each with its own prompt and JSON schema (not a shared generic one) — `/question`, `/suggestion`, `/decision`, `/action`, `/observation` now perform real Gemini extraction and deterministic validation, including a semantic-completeness gate (`needs_clarification`) that returns a clarification question instead of storing an ambiguous item.
+- **Private confirmation before storage, for all six commands.** Extracted results are held as temporary `pending_knowledge` records and previewed to the submitter privately via Telegram DM with Save/Cancel — never posted in the group. A same-user check defends the callback; a DM-unavailable fallback safely instructs first-time submitters in the group without exposing extracted content there.
+- **Insights AI added** (`POST /api/insights/chat`) — read-only, grounded Q&A over confirmed knowledge, reading through a restricted `ai_knowledge_feed` view via a dedicated least-privilege `ai_readonly` role. The access boundary was verified live: the role can read the view but cannot read or write any of the six raw knowledge tables.
+- **Frontend:** shared client-side cache for `useIdeas()` (fixes repeated refetch/loading-flash when navigating Dashboard/Knowledge/Insights); AI Insights page gained a grounded chat panel with markdown rendering and auto-scroll; removed remaining fake placeholder content (a hardcoded fake user identity and hardcoded fake search results in the app shell, a stale copyright year).
+- **Known issue found, not yet fixed:** the five `Insert <Type> to Supabase` n8n nodes use malformed expression syntax and will not write real data to the permanent tables until corrected — see `docs/PROJECT_UNDERSTANDING.md` §9.
+- **Known discrepancy found, not resolved:** `00_MVP_SCOPE.md` and `10_API_SPEC.md` both state the MVP does not perform automatic AI duplicate detection, but the live `/idea` agent's core, demoed behavior is exactly that. Flagged for a scoping decision, not silently resolved by this pass.
+
+---
 
 ### Recent Updates (2026-08-06)
 - **n8n workflow rebuilt around explicit slash commands.** New workflow `automation/workflows/collainsight-mvp-idea-agent.json` replaces the old free-text-classifying pipeline: a Switch node routes `/idea` to a real backend call and the other five commands to placeholder nodes, keeping the six-agent architecture visible without implementing agents that aren't ready.
@@ -56,9 +69,10 @@ This document provides a quick overview of where the project is at any given tim
 ---
 
 ### Upcoming (Next Steps)
-- Reconcile the presentation deck's "Automatic AI Duplicate Detection → post-MVP" slide against the fact that duplicate detection is already built and demoed (flagged in the 2026-08-06 session log, not yet resolved).
-- Implement the remaining five agents (Question, Suggestion, Decision, Action, Observation) in the days before the final presentation.
-- Move `poc_ideas` to the real `KnowledgeItem` schema and add the manager status/review workflow (Pending/Approved/Rejected/etc.) — currently only a disabled "Coming Soon" button exists in the UI.
+- Fix the malformed expression syntax in the five `Insert <Type> to Supabase` n8n nodes (see 2026-08-12 entry above) before relying on Save for those commands.
+- Reconcile the "Automatic AI Duplicate Detection" scope claim in `00_MVP_SCOPE.md`/`10_API_SPEC.md` against the fact that duplicate detection is already built and demoed by the `/idea` agent (flagged repeatedly, not yet resolved).
+- Wire the dashboard/`GET /api/ideas` to the five new knowledge tables — it currently reads `poc_ideas` only, so confirmed Questions/Suggestions/Decisions/Actions/Observations aren't visible in the UI yet even though they're being saved.
+- Move the six flat PoC tables to the real `KnowledgeItem` schema and add the manager status/review workflow (Pending/Approved/Rejected/etc.) — currently only a disabled "Coming Soon" button exists in the UI.
 - Add authentication to the backend before it's exposed beyond a rehearsal demo window.
 
 </changelog>

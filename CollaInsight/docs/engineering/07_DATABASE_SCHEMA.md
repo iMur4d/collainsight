@@ -70,10 +70,13 @@ without redesigning the core model.
 
 <mvp_scope_note>
 
-`docs/00_MVP_SCOPE.md` is authoritative. This document models the full future platform; the MVP uses only a subset of it:
+`docs/00_MVP_SCOPE.md` is authoritative. This document models the full future platform; the MVP uses only a subset of it, implemented as a deliberately minimal PoC-level schema, not the production model below:
 
+- **KnowledgeItem** is currently six separate flat tables (`poc_ideas`, `poc_questions`, `poc_suggestions`, `poc_decisions`, `poc_actions`, `poc_observations`), not the single unified entity described below. Each has its own type-specific fields (e.g. Question's `is_blocking`/`addressed_to`, Action's `owner`/`due`) alongside common fields (title, summary, tags, keywords, Telegram attribution, timestamp). See `backend/README.md` and the current n8n workflow's DDL sticky notes for the exact column-level shape. Status transitions beyond a disabled "Mark as Reviewed" UI stub are not implemented.
+- **Pending confirmation** (PoC plumbing, not a long-term entity): before a KnowledgeItem is permanently stored, a temporary `pending_knowledge` record — knowledge type, the extracted payload as JSON, and a numeric Telegram user ID used only to authorize the confirmation (see the ExternalAccount note below) — holds it while the submitter confirms via private Telegram DM (Save/Cancel). The record is deleted after either action; nothing pending survives past that point. Implements the Human Confirmation step in `05_WORKFLOWS.md`.
+- **AI-safe read view** (PoC plumbing, not a long-term entity): `ai_knowledge_feed` is a restricted, read-only Postgres view unioning the six knowledge tables, exposing only `knowledge_type`, `source_id`, `title`, `summary`, `tags`, `keywords`, a type-specific `attributes` object, and `created_at` — no Telegram identity metadata, no raw source message text. It is the only thing the Insights AI reads, via a dedicated least-privilege `ai_readonly` role, verified to have no `SELECT`/`INSERT` access to the six raw tables. See `13_SECURITY.md`.
 - **PlatformUser** in the MVP means managers/reviewers who authenticate into the dashboard — not Telegram participants.
-- **ExternalAccount** (and the Account Linking it implies) is not used in the MVP. Telegram participants are identified by the raw username/first name captured at extraction time; they are not linked to a PlatformUser record.
+- **ExternalAccount** (and the Account Linking it implies) is not used in the MVP. Telegram participants are identified by the raw username/first name captured at extraction time; they are not linked to a PlatformUser record. The one exception is the numeric Telegram user ID captured transiently for pending-confirmation authorization above — it is never written to any of the six permanent knowledge tables.
 - **CollaborationSuggestion** and **KnowledgeRelationship** are post-MVP entities (Collaboration Hub and Knowledge Graph are both explicitly excluded from the MVP — see `docs/00_MVP_SCOPE.md`). They're documented here for architectural completeness, not as current build targets.
 
 </mvp_scope_note>

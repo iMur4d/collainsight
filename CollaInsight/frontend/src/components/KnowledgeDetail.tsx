@@ -6,8 +6,8 @@ import { User, MessageSquare, Clock, HelpCircle, ChevronDown } from "lucide-reac
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { useThemeCtx } from "@/shared";
-import { KnowledgeItem } from "@/lib/api";
-import { relativeTime } from "@/lib/useIdeas";
+import { KnowledgeFeedItem } from "@/lib/api";
+import { relativeTime } from "@/lib/useKnowledge";
 
 function TagChip({ label }: { label: string }) {
   return (
@@ -66,19 +66,29 @@ function OriginalMessage({ text }: { text: string }) {
   );
 }
 
+/** Concepts/Assumptions are Idea-specific attributes (see attributes shape
+ * per type in backend/api/main.py's KNOWLEDGE_TYPE_CONFIG) - other types
+ * simply won't have them, in which case this renders nothing. */
+function stringArrayAttr(item: KnowledgeFeedItem, key: string): string[] {
+  const value = item.attributes?.[key];
+  return Array.isArray(value) ? (value as string[]) : [];
+}
+
 /** Narrative-only markdown - Tags/Keywords/Open Questions/source text are
  * custom UI now, not markdown sections (see the design discussion this
  * replaced the old all-markdown layout with). Only Concepts/Assumptions
  * remain here, since those are free-form enough to benefit from GFM
  * (lists, and whatever formatting future knowledge items might carry). */
-function toMarkdown(item: KnowledgeItem): string {
+function toMarkdown(item: KnowledgeFeedItem): string {
+  const concepts = stringArrayAttr(item, "concepts");
+  const assumptions = stringArrayAttr(item, "assumptions");
   const sections: string[] = [];
-  if (item.concepts.length) sections.push(`## Concepts\n\n${item.concepts.map(c => `- ${c}`).join("\n")}`);
-  if (item.assumptions.length) sections.push(`## Assumptions\n\n${item.assumptions.map(a => `- ${a}`).join("\n")}`);
+  if (concepts.length) sections.push(`## Concepts\n\n${concepts.map(c => `- ${c}`).join("\n")}`);
+  if (assumptions.length) sections.push(`## Assumptions\n\n${assumptions.map(a => `- ${a}`).join("\n")}`);
   return sections.join("\n\n");
 }
 
-function MarkdownBody({ markdown }: { markdown: string }) {
+export function MarkdownBody({ markdown }: { markdown: string }) {
   const { isLight, fg, mutedFg, border, inputBg } = useThemeCtx();
   if (!markdown) return null;
   return (
@@ -132,7 +142,7 @@ function MarkdownBody({ markdown }: { markdown: string }) {
  * of how it's presented (Sheet today) - render this directly inside a
  * future dedicated knowledge page/route without rewriting it.
  */
-export function KnowledgeDetailContent({ item }: { item: KnowledgeItem }) {
+export function KnowledgeDetailContent({ item }: { item: KnowledgeFeedItem }) {
   const { fg, mutedFg, border, divider } = useThemeCtx();
   const createdAt = new Date(item.created_at);
   const hasChips = item.tags.length > 0 || item.keywords.length > 0;
@@ -165,9 +175,9 @@ export function KnowledgeDetailContent({ item }: { item: KnowledgeItem }) {
 
       <p className="text-[15px] leading-relaxed font-medium" style={{ color: fg }}>{item.summary}</p>
 
-      <OpenQuestionsCallout questions={item.open_questions} />
+      <OpenQuestionsCallout questions={stringArrayAttr(item, "open_questions")} />
 
-      <OriginalMessage text={item.idea_text} />
+      <OriginalMessage text={item.raw_text} />
 
       {markdown && (
         <div style={{ borderTop: `1px solid ${divider}`, paddingTop: "0.5rem" }}>
@@ -178,7 +188,7 @@ export function KnowledgeDetailContent({ item }: { item: KnowledgeItem }) {
   );
 }
 
-export function KnowledgeDetailPanel({ item, onClose }: { item: KnowledgeItem | null; onClose: () => void }) {
+export function KnowledgeDetailPanel({ item, onClose }: { item: KnowledgeFeedItem | null; onClose: () => void }) {
   const { isLight, mutedFg, border } = useThemeCtx();
   const surface = isLight ? "#ffffff" : "#0a0c14";
 

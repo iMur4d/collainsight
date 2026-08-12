@@ -9,8 +9,9 @@ how this evolves into the real schema after the PoC.
 import os
 import re
 
+import httpx
 from langchain_core.tools import tool
-from supabase import Client, create_client
+from supabase import Client, ClientOptions, create_client
 
 _supabase: Client | None = None
 
@@ -18,7 +19,17 @@ _supabase: Client | None = None
 def get_supabase() -> Client:
     global _supabase
     if _supabase is None:
-        _supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+        # ClientOptions has no `verify` kwarg in this supabase-py version -
+        # SSL verification is controlled by handing it a pre-built httpx
+        # client instead. verify=False works around SSL interception on
+        # networks like KAU's campus proxy (self-signed root, untrusted by
+        # curl/Windows too - confirmed not a Python-only issue) for local
+        # demo/dev. Never do this against an untrusted network in production.
+        _supabase = create_client(
+            os.environ["SUPABASE_URL"],
+            os.environ["SUPABASE_KEY"],
+            options=ClientOptions(httpx_client=httpx.Client(verify=False)),
+        )
     return _supabase
 
 

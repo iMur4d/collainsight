@@ -62,6 +62,8 @@ Knowledge is permanent.
 
 AI-generated knowledge should be reviewed before becoming part of the organization's knowledge base whenever the workflow requires human confirmation.
 
+**Current MVP implementation:** this is not conditional for the five n8n-native knowledge types (`/question`, `/suggestion`, `/decision`, `/action`, `/observation`) — every extraction is held as a temporary pending record and previewed privately to the submitter via Telegram DM with explicit Save/Cancel before anything reaches permanent storage. `/idea` has its own equivalent gate: the LangGraph agent's search-and-compare step decides save-or-flag-duplicate before storage, without a separate submitter-facing confirmation UI. See `docs/engineering/05_WORKFLOWS.md`'s Submit Knowledge workflow.
+
 ---
 
 ## Collaboration Over Collection

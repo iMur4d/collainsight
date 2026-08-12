@@ -138,9 +138,9 @@ The platform identity always remains the primary identity.
 
 A registered user submits an idea, suggestion, decision, action item, question, or observation.
 
-**MVP note:** the trigger is a participant sending a Telegram slash command (`/idea`, `/question`, `/suggestion`, `/decision`, etc.) with content, in the connected Telegram group — this *is* the deliberate "submit to CollaInsight" action. There is no separate registration step, but there is an explicit, user-driven act of submission (see `00_MVP_SCOPE.md`'s `<capture_principle>`). Identity Verification below is a no-op for the MVP: the sender's raw Telegram username/first name is captured for display, not verified against a platform account.
+**MVP note:** the trigger is a participant sending a Telegram slash command (`/idea`, `/question`, `/suggestion`, `/decision`, `/action`, `/observation`) with content, in the connected Telegram group — this *is* the deliberate "submit to CollaInsight" action. There is no separate registration step, but there is an explicit, user-driven act of submission (see `00_MVP_SCOPE.md`'s `<capture_principle>`). Identity Verification below is a no-op for the MVP: the sender's raw Telegram username/first name is captured for display, not verified against a platform account.
 
-**Current build note:** the running Phase 1 n8n workflow predates this — it still passively captures any message posted in the group rather than triggering on a command. Rebuilding it around explicit slash-command triggers is a pending task, not yet started (see `docs/PROJECT_UNDERSTANDING.md` §4/§9).
+**Implementation note:** `/idea` is orchestrated by n8n but delegates AI Processing/Knowledge Generation to the Python backend's LangGraph agent. The other five commands run AI Processing/Knowledge Generation directly inside n8n (a direct Gemini call). Both paths converge on the same Human Confirmation step below before Store Knowledge.
 
 ### Flow
 
@@ -164,7 +164,11 @@ Knowledge Generation
 
 ↓
 
-Store Knowledge
+Human Confirmation — the extracted result is held as a temporary pending record and previewed to the submitter privately via Telegram DM with Save/Cancel buttons, never posted in the group. A same-user check on the callback defends against anyone but the original submitter actioning it. If the submitter has never started a private chat with the bot, Telegram blocks the DM and the workflow instructs them in the group to start the bot privately and resubmit — the extracted content itself is never exposed in the group.
+
+↓
+
+Store Knowledge — only on Save. Cancel discards the pending record; nothing is stored.
 
 ↓
 
@@ -176,7 +180,7 @@ Notify User
 
 ### Result
 
-A structured knowledge item is created.
+A structured knowledge item is created, but only after the submitter explicitly confirms it.
 
 </workflow>
 

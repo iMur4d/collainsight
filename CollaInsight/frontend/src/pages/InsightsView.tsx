@@ -1,22 +1,39 @@
 import React, { useMemo, useState } from "react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Hash, Users, HelpCircle, BookOpen } from "lucide-react";
 
 import { useThemeCtx } from "@/shared";
-import { KnowledgeItem } from "@/lib/api";
-import { useIdeas, relativeTime, topTags } from "@/lib/useIdeas";
-import { capturesByDay, topContributors, needsFollowUp, weeklyGrowth, knowledgeVelocity } from "@/lib/insights";
+import { KnowledgeFeedItem, KnowledgeCategory } from "@/lib/api";
+import { useKnowledge, relativeTime, topTags } from "@/lib/useKnowledge";
+import { capturesByDay, topContributors, needsFollowUp, weeklyGrowth, knowledgeVelocity, openQuestionsOf } from "@/lib/insights";
 import { KnowledgeDetailPanel } from "@/components/KnowledgeDetail";
 import { GrowthChip } from "@/components/GrowthChip";
+import { InsightsChat } from "@/components/InsightsChat";
 
-// Chart mark colors - validated for CVD-safety, chroma, and dark/light
-// contrast via the dataviz skill's validate_palette.js (adjacent-pair floor
-// ok only with secondary encoding, which these get via titles/axis labels).
-// Each chart here is a single series, so no legend is needed - see
-// references/marks-and-anatomy.md.
+// Chart mark colors - CHART_BLUE/CYAN/VIOLET were validated for CVD-safety,
+// chroma, and dark/light contrast via the dataviz skill's validate_palette.js
+// in an earlier session (see 2026-08-06 log); CHART_GREEN/AMBER reuse those
+// same validated dark-mode-safe variants. CHART_SLATE is new (Observation is
+// deliberately the "neutral, factual" category - see its branch's sticky
+// note in the n8n workflow - so a neutral grey mark fits its meaning, not
+// just fills a slot). Single-series bar/line charts below don't need a
+// legend (title/axis already disambiguate); the new Pie chart does, since
+// it's the one multi-series chart here - see references/marks-and-anatomy.md.
 const CHART_BLUE = "#2563EB";
 const CHART_CYAN = "#0891B2";
 const CHART_VIOLET = "#8B5CF6";
+const CHART_GREEN = "#059669";
+const CHART_AMBER = "#D97706";
+const CHART_SLATE = "#64748B";
+
+const TYPE_COLORS: Record<KnowledgeCategory, string> = {
+  idea: CHART_BLUE,
+  question: CHART_AMBER,
+  suggestion: CHART_VIOLET,
+  decision: CHART_CYAN,
+  action: CHART_GREEN,
+  observation: CHART_SLATE,
+};
 
 function ChartTooltip({ active, payload, label, cardBg, border, fg }: any) {
   if (!active || !payload?.length) return null;
@@ -58,20 +75,27 @@ function ChartCard({ title, subtitle, children }: { title: string; subtitle?: st
 
 export function InsightsView() {
   const { isLight, fg, mutedFg, subFg, cardBg, border, divider, hoverBg } = useThemeCtx();
-  const { ideas, loading, error } = useIdeas();
-  const [selected, setSelected] = useState<KnowledgeItem | null>(null);
+  const { items, loading, error } = useKnowledge();
+  const [selected, setSelected] = useState<KnowledgeFeedItem | null>(null);
 
   const gridColor = isLight ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.06)";
   const tickStyle = { fill: mutedFg, fontSize: 11 };
 
-  const daily = useMemo(() => capturesByDay(ideas), [ideas]);
-  const tags = useMemo(() => topTags(ideas, 6), [ideas]);
-  const contributors = useMemo(() => topContributors(ideas, 6), [ideas]);
-  const followUp = useMemo(() => needsFollowUp(ideas), [ideas]);
-  const growth = useMemo(() => weeklyGrowth(ideas), [ideas]);
-  const velocity = useMemo(() => knowledgeVelocity(ideas), [ideas]);
+  const daily = useMemo(() => capturesByDay(items), [items]);
+  const tags = useMemo(() => topTags(items, 6), [items]);
+  const contributors = useMemo(() => topContributors(items, 6), [items]);
+  const followUp = useMemo(() => needsFollowUp(items), [items]);
+  const growth = useMemo(() => weeklyGrowth(items), [items]);
+  const velocity = useMemo(() => knowledgeVelocity(items), [items]);
+  const typeDistribution = useMemo(() => {
+    const counts = new Map<KnowledgeCategory, number>();
+    for (const item of items) counts.set(item.knowledge_type, (counts.get(item.knowledge_type) || 0) + 1);
+    return [...counts.entries()]
+      .map(([type, count]) => ({ type, name: type.charAt(0).toUpperCase() + type.slice(1), count }))
+      .sort((a, b) => b.count - a.count);
+  }, [items]);
 
-  const contributorCount = new Set(ideas.map(i => i.telegram_display_name).filter(Boolean)).size;
+  const contributorCount = new Set(items.map(i => i.telegram_display_name).filter(Boolean)).size;
 
   return (
     <div className="p-6 max-w-[1400px] mx-auto space-y-5">
@@ -88,17 +112,17 @@ export function InsightsView() {
         </div>
       )}
 
-      {!loading && !error && ideas.length === 0 && (
+      {!loading && !error && items.length === 0 && (
         <div className="p-8 rounded-2xl text-center text-sm" style={{ background: cardBg, border: `1px solid ${border}`, color: mutedFg }}>
-          No data yet — insights appear once ideas are captured via Telegram.
+          No data yet — insights appear once knowledge is captured via Telegram.
         </div>
       )}
 
-      {(loading || ideas.length > 0) && (
+      {(loading || items.length > 0) && (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard icon={BookOpen} label="Ideas captured" value={ideas.length} colorClass="text-blue-500 bg-blue-500/10" loading={loading} />
-            <StatCard icon={Hash} label="Unique tags" value={tags.length ? new Set(ideas.flatMap(i => i.tags)).size : 0} colorClass="text-cyan-500 bg-cyan-500/10" loading={loading} />
+            <StatCard icon={BookOpen} label="Items captured" value={items.length} colorClass="text-blue-500 bg-blue-500/10" loading={loading} />
+            <StatCard icon={Hash} label="Unique tags" value={tags.length ? new Set(items.flatMap(i => i.tags)).size : 0} colorClass="text-cyan-500 bg-cyan-500/10" loading={loading} />
             <StatCard icon={Users} label="Contributors" value={contributorCount} colorClass="text-violet-500 bg-violet-500/10" loading={loading} />
             <StatCard icon={HelpCircle} label="Need follow-up" value={followUp.length} colorClass="text-amber-500 bg-amber-500/10" loading={loading} />
           </div>
@@ -122,7 +146,7 @@ export function InsightsView() {
               </div>
               <div>
                 <span className="text-2xl font-bold" style={{ color: fg }}>{velocity}</span>
-                <div className="text-xs mt-0.5" style={{ color: mutedFg }}>Ideas / day (avg since first capture)</div>
+                <div className="text-xs mt-0.5" style={{ color: mutedFg }}>Items / day (avg since first capture)</div>
               </div>
             </div>
           </div>
@@ -134,17 +158,37 @@ export function InsightsView() {
                   <div className="h-48 rounded-xl animate-pulse" style={{ background: hoverBg }} />
                 ) : (
                   <ResponsiveContainer width="100%" height={200}>
-                    <BarChart data={daily} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                    <LineChart data={daily} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
                       <CartesianGrid vertical={false} stroke={gridColor} />
                       <XAxis dataKey="label" tick={tickStyle} axisLine={{ stroke: gridColor }} tickLine={false} />
                       <YAxis tick={tickStyle} axisLine={false} tickLine={false} allowDecimals={false} width={30} />
-                      <Tooltip content={<ChartTooltip cardBg={cardBg} border={border} fg={fg} />} cursor={{ fill: hoverBg }} />
-                      <Bar dataKey="count" name="Ideas captured" fill={CHART_BLUE} radius={[4, 4, 0, 0]} maxBarSize={24} />
-                    </BarChart>
+                      <Tooltip content={<ChartTooltip cardBg={cardBg} border={border} fg={fg} />} cursor={{ stroke: gridColor }} />
+                      <Line type="monotone" dataKey="count" name="Items captured" stroke={CHART_BLUE} strokeWidth={2} dot={{ r: 3, fill: CHART_BLUE }} activeDot={{ r: 5 }} />
+                    </LineChart>
                   </ResponsiveContainer>
                 )}
               </ChartCard>
             </div>
+
+            <ChartCard title="Knowledge Type Distribution">
+              {loading ? (
+                <div className="h-48 rounded-xl animate-pulse" style={{ background: hoverBg }} />
+              ) : typeDistribution.length === 0 ? (
+                <p className="text-xs py-8 text-center" style={{ color: mutedFg }}>No data yet.</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Tooltip content={<ChartTooltip cardBg={cardBg} border={border} fg={fg} />} />
+                    <Legend wrapperStyle={{ fontSize: 11, color: mutedFg }} />
+                    <Pie data={typeDistribution} dataKey="count" nameKey="name" innerRadius={55} outerRadius={80} paddingAngle={2}>
+                      {typeDistribution.map(entry => (
+                        <Cell key={entry.type} fill={TYPE_COLORS[entry.type]} />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </ChartCard>
 
             <ChartCard title="Top Tags">
               {loading ? (
@@ -176,7 +220,7 @@ export function InsightsView() {
                     <XAxis type="number" tick={tickStyle} axisLine={false} tickLine={false} allowDecimals={false} />
                     <YAxis type="category" dataKey="name" tick={tickStyle} axisLine={false} tickLine={false} width={100} />
                     <Tooltip content={<ChartTooltip cardBg={cardBg} border={border} fg={fg} />} cursor={{ fill: hoverBg }} />
-                    <Bar dataKey="count" name="Ideas" fill={CHART_VIOLET} radius={[0, 4, 4, 0]} maxBarSize={20} />
+                    <Bar dataKey="count" name="Items" fill={CHART_VIOLET} radius={[0, 4, 4, 0]} maxBarSize={20} />
                   </BarChart>
                 </ResponsiveContainer>
               )}
@@ -187,31 +231,40 @@ export function InsightsView() {
             <div className="px-5 py-4 flex items-center gap-2" style={{ borderBottom: `1px solid ${divider}` }}>
               <HelpCircle className="w-4 h-4 text-amber-500" />
               <h3 className="text-sm font-semibold" style={{ color: fg }}>Needs Follow-Up</h3>
-              <span className="text-xs ml-1" style={{ color: mutedFg }}>Ideas with open questions the AI couldn't resolve from the original message</span>
+              <span className="text-xs ml-1" style={{ color: mutedFg }}>Items with open questions the AI couldn't resolve from the original message</span>
             </div>
             {followUp.length === 0 ? (
-              <div className="px-5 py-6 text-center text-xs" style={{ color: mutedFg }}>Nothing outstanding — every captured idea is fully specified.</div>
+              <div className="px-5 py-6 text-center text-xs" style={{ color: mutedFg }}>Nothing outstanding — every captured item is fully specified.</div>
             ) : (
-              followUp.slice(0, 8).map((item, idx, arr) => (
-                <div key={item.id} onClick={() => setSelected(item)}
-                  className="px-5 py-3 flex items-center justify-between gap-3 cursor-pointer transition-all"
-                  style={{ borderBottom: idx < arr.length - 1 ? `1px solid ${divider}` : "none" }}
-                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = hoverBg}
-                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
-                >
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium truncate" style={{ color: fg }}>{item.title}</div>
-                    <div className="text-xs mt-0.5" style={{ color: subFg }}>{relativeTime(item.created_at)}</div>
+              followUp.slice(0, 8).map((item, idx, arr) => {
+                const openQuestions = openQuestionsOf(item);
+                return (
+                  <div key={`${item.knowledge_type}-${item.source_id}`} onClick={() => setSelected(item)}
+                    className="px-5 py-3 flex items-center justify-between gap-3 cursor-pointer transition-all"
+                    style={{ borderBottom: idx < arr.length - 1 ? `1px solid ${divider}` : "none" }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = hoverBg}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate" style={{ color: fg }}>{item.title}</div>
+                      <div className="text-xs mt-0.5" style={{ color: subFg }}>{relativeTime(item.created_at)}</div>
+                    </div>
+                    <span className="flex-shrink-0 text-xs px-2 py-1 rounded-full font-medium" style={{ background: "rgba(245,158,11,0.1)", color: "#F59E0B" }}>
+                      {openQuestions.length} question{openQuestions.length === 1 ? "" : "s"}
+                    </span>
                   </div>
-                  <span className="flex-shrink-0 text-xs px-2 py-1 rounded-full font-medium" style={{ background: "rgba(245,158,11,0.1)", color: "#F59E0B" }}>
-                    {item.open_questions.length} question{item.open_questions.length === 1 ? "" : "s"}
-                  </span>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </>
       )}
+
+      {/* Separate data path from the deterministic KPIs/charts above - grounded
+          Q&A over ai_knowledge_feed via the backend, never a replacement for
+          computed figures. Not gated on useKnowledge()'s loading/empty state
+          since it doesn't depend on that fetch. */}
+      <InsightsChat />
 
       <KnowledgeDetailPanel item={selected} onClose={() => setSelected(null)} />
     </div>

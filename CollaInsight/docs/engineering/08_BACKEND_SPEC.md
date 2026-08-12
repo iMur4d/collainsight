@@ -32,9 +32,9 @@ Business logic must remain independent from communication providers and AI vendo
 
 <mvp_scope_note>
 
-`docs/00_MVP_SCOPE.md` is authoritative. This document describes the full backend's modules; for the MVP, the **Authentication** module below is scoped to manager/reviewer dashboard login only (via Supabase Auth — see `14_TECHNOLOGY_STACK.md`). Its "Account linking" and self-service "User registration" responsibilities are post-MVP: Telegram participants do not authenticate or link an account during the MVP.
+`docs/00_MVP_SCOPE.md` is authoritative. This document describes the full backend's modules; for the MVP, the **Authentication** module below is scoped to manager/reviewer dashboard login only (via Supabase Auth — see `14_TECHNOLOGY_STACK.md`). Its "Account linking" and self-service "User registration" responsibilities are post-MVP: Telegram participants do not authenticate or link an account during the MVP. Manager authentication itself is not yet implemented.
 
-The backend module itself does not exist yet as a running service — see `docs/PROJECT_UNDERSTANDING.md` for current implementation status.
+The backend (FastAPI) is running. It does **not** own all AI orchestration for the MVP, unlike the generic "Knowledge"/"AI Integration" module descriptions below might imply: it owns the `/idea` LangGraph agent (`POST /api/idea`) and the read-only Insights AI (`POST /api/insights/chat`). The other five knowledge types (`/question`, `/suggestion`, `/decision`, `/action`, `/observation`) are extracted, validated, and stored entirely within n8n — a deliberate architectural split, not a gap — since that extraction is single-shot structured generation rather than the kind of multi-step reasoning the backend is reserved for. See `04_SYSTEM_ARCHITECTURE.md`'s `<mvp_scope_note>` and `06_AI_PIPELINE.md`'s `<current_implementation_note>`.
 
 </mvp_scope_note>
 

@@ -178,17 +178,18 @@ export function AppShell({ view, setView, children, themeId, setThemeId }: {
           })}
         </nav>
 
-        {/* User */}
+        {/* User - no auth system exists yet (Phase 4, not built), so this
+            deliberately doesn't imply a signed-in identity or a pricing tier. */}
         <div
           className={`border-t p-3 flex items-center gap-3 ${!sidebarOpen ? "justify-center" : ""}`}
           style={{ borderColor: "var(--sidebar-border)" }}
         >
           <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold text-white"
-            style={{ background: "linear-gradient(135deg, #2563EB, #06B6D4)" }}>A</div>
+            style={{ background: "linear-gradient(135deg, #2563EB, #06B6D4)" }}>?</div>
           {sidebarOpen && (
             <div className="min-w-0">
-              <div className="text-xs font-medium truncate" style={{ color: fg }}>Ahmed Al-Rashid</div>
-              <div className="text-[10px]" style={{ color: mutedFg }}>Pro workspace</div>
+              <div className="text-xs font-medium truncate" style={{ color: fg }}>Manager view</div>
+              <div className="text-[10px]" style={{ color: mutedFg }}>No login yet</div>
             </div>
           )}
         </div>
@@ -268,18 +269,14 @@ export function AppShell({ view, setView, children, themeId, setThemeId }: {
                 <X className="w-4 h-4" style={{ color: mutedFg }} />
               </button>
             </div>
-            <div className="p-4 space-y-1">
-              {["RAG Pipeline Architecture", "n8n Automation Workflow", "Team Sprint Retrospective", "AI Agent Design Patterns"].map(item => (
-                <button key={item}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all text-left"
-                  style={{ color: fg }}
-                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = hoverBg}
-                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
-                >
-                  <BookOpen className="w-3.5 h-3.5" style={{ color: mutedFg }} />
-                  {item}
-                </button>
-              ))}
+            {/* This modal isn't wired to real search yet - showing fake
+                hardcoded results here would violate the project's no-fake-data
+                rule. Point to the Knowledge page's real, working search instead. */}
+            <div className="p-6 flex flex-col items-center text-center gap-2">
+              <BookOpen className="w-5 h-5 opacity-40" style={{ color: mutedFg }} />
+              <p className="text-xs" style={{ color: mutedFg }}>
+                Quick search isn't wired up yet — head to the <strong style={{ color: fg }}>Knowledge</strong> tab to search captured items by title, summary, tags, or keywords.
+              </p>
             </div>
           </div>
         </div>

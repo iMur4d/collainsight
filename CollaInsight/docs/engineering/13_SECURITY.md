@@ -176,6 +176,8 @@ Only data that is required for AI processing should be sent to the AI pipeline.
 
 The system should avoid sending unnecessary private metadata, secrets, or unrelated context.
 
+**Current implementation:** the Insights AI (`POST /api/insights/chat`) concretely enforces this rather than relying on convention. It reads exclusively through `ai_knowledge_feed`, a restricted Postgres view that excludes Telegram identity metadata (display name, chat ID, chat title, message ID) and raw source message text, exposing only `knowledge_type`, `source_id`, `title`, `summary`, `tags`, `keywords`, a type-specific `attributes` object, and `created_at`. It connects using a dedicated least-privilege `ai_readonly` Postgres role — not the Supabase service-role credential used elsewhere in the backend — and this boundary has been verified directly, not assumed: `ai_readonly` can `SELECT` the view but cannot `SELECT` or `INSERT` any of the six raw knowledge tables. See `07_DATABASE_SCHEMA.md`'s `<mvp_scope_note>` and `06_AI_PIPELINE.md`'s `<insights_ai_note>`.
+
 ---
 
 ## Data Retention

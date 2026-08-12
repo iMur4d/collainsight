@@ -66,6 +66,29 @@ The n8n workflow (`automation/workflows/collainsight-mvp-idea-agent.json`) has a
 
 The `X-API-Key` header on that node is a placeholder too - this PoC's `/api/idea` doesn't check it yet (no auth layer for the PoC), so any value works for now.
 
+## Insights AI (`POST /api/insights/chat`)
+
+Read-only Q&A/synthesis over captured knowledge, for the frontend's Insights page - deliberately separate from `/api/idea`'s LangGraph agent and from the deterministic KPIs/charts the frontend computes itself from `GET /api/ideas`. See `ai/insights.py` for the full design rationale.
+
+**Setup (one-time, before this endpoint returns real answers):**
+
+1. `ai_knowledge_feed` (the column-redacted `UNION ALL` view over `poc_ideas`/`poc_questions`/`poc_suggestions`/`poc_decisions`/`poc_actions`/`poc_observations`, excluding all Telegram metadata and raw message text) already exists in Supabase.
+2. **Still needed:** create the `ai_readonly` Postgres role and grant it `SELECT` on `ai_knowledge_feed` only - no grants on the six raw tables. (`create role ai_readonly login password '...'; grant usage on schema public to ai_readonly; grant select on ai_knowledge_feed to ai_readonly;`)
+3. Set `INSIGHTS_DB_URL` in `.env` to `ai_readonly`'s own direct Postgres connection string (Project Settings → Database → Connection string, using that role's credentials) - **not** the `SUPABASE_KEY` service-role key used elsewhere in this backend. That key bypasses RLS and can write; this path must never be able to.
+
+**Request/response:**
+
+```
+POST /api/insights/chat
+{ "question": "What are the recurring themes this week?" }
+
+→ { "answer": "...", "items_considered": 42 }
+```
+
+Each call is stateless (no server-side conversation history) and retrieves a bounded recent window (most recent 200 items from `ai_knowledge_feed`, not a semantic search) - simple and deterministic at current data volume; revisit if that stops being representative.
+
+---
+
 ## Evolving this into production
 
 When Phase 2 actually starts: replace `poc_ideas` with the real `KnowledgeItem` table (`07_DATABASE_SCHEMA.md`), move persistence behind the `Knowledge` backend module described in `08_BACKEND_SPEC.md`, and add the auth/validation layers that module lists. The agent logic in `ai/idea_agent.py` and the prompt in `ai/idea_agent_prompt.md` should mostly carry over unchanged - only the tools' persistence layer needs to change.

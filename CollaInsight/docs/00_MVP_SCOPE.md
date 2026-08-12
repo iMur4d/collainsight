@@ -103,23 +103,29 @@ The AI extracts and structures the content within the category already specified
 
 4.
 
-The result is validated. A validation failure — empty content, an unsupported attachment, a speech-to-text failure, or another invalid submission — stops the item here; it is not stored.
+The result is validated. A validation failure — empty content, an unsupported attachment, a speech-to-text failure, or another invalid submission — stops the item here; it is not stored. A result that parses correctly but is too ambiguous to stand alone (semantically incomplete) also stops here — the student receives one focused clarification question instead of a stored item.
 
 ↓
 
 5.
 
-The structured result is stored in the database.
+A valid, sufficiently clear result is not stored immediately. It is held as a temporary pending record and previewed privately (direct message) to the student who submitted it, with an explicit Save/Cancel confirmation — see `docs/engineering/05_WORKFLOWS.md` for the implementation detail. Cancel discards the pending record; only Save proceeds to storage.
 
 ↓
 
 6.
 
-The web dashboard displays the extracted items.
+The confirmed result is stored in the database.
 
 ↓
 
 7.
+
+The web dashboard displays the extracted items.
+
+↓
+
+8.
 
 Managers review the discussion efficiently.
 
@@ -136,6 +142,8 @@ Included
 ✓ User Authentication (managers/reviewers authenticate into the dashboard; Telegram participants are not required to register or link accounts during the MVP — see `docs/engineering/08_BACKEND_SPEC.md`)
 
 ✓ AI Discussion Structuring (Ideas, Suggestions, Decisions, Action Items, Questions, Observations) — captured via explicit Telegram slash commands, not automatic classification of arbitrary messages (see `<capture_principle>` above)
+
+✓ Private Confirmation Before Storage — the student previews the extracted result via Telegram DM and explicitly saves or cancels it; nothing reaches the permanent knowledge store unconfirmed (see `<core_workflow>` step 5 and `docs/engineering/05_WORKFLOWS.md`)
 
 ✓ Structured Item Storage
 

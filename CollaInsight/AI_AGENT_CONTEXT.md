@@ -20,15 +20,17 @@ Read this file before generating code, answering architecture questions, or star
 ---
 
 ## 2. Current Development Phase
-**Current Status:** Backend & Database Foundation Phase
+**Current Status:** MVP capture pipeline live end-to-end; polishing before final presentation.
 **What is already done:**
 - All architecture and scope documentation (`/docs`).
-- The Frontend App Shell (React/Vite). The UI layout, landing page, and routing are built.
-- TypeScript environment fixes.
-**What is next (You should focus on this):**
-- **Phase 1 (Current Focus):** Workflow Validation (Telegram -> n8n -> AI -> JSON).
-- **Phase 2 (Blocked until Phase 1 passes):** Supabase MVP schema design based on validated JSON.
-- **Phase 3:** React Dashboard integration.
+- Frontend App Shell + Dashboard/Knowledge/AI Insights pages, reading live data (no mock data anywhere).
+- All six slash commands live in n8n: `/idea` via the Python backend's LangGraph agent (search/compare/save-or-flag-duplicate); `/question`/`/suggestion`/`/decision`/`/action`/`/observation` via n8n-native Gemini extraction + deterministic validation.
+- Private DM confirmation (Save/Cancel) before any of the six commands' output reaches permanent storage.
+- Insights AI (`POST /api/insights/chat`) — read-only, grounded Q&A over a restricted Supabase view (`ai_knowledge_feed`) via a dedicated least-privilege `ai_readonly` role, verified to have no access to the raw tables.
+**What is next (see `PROJECT_STATUS.md` for the current list):**
+- Manager authentication/RBAC.
+- Moving the six flat PoC tables toward the production `KnowledgeItem` schema.
+- A known bug in five of the n8n Insert nodes (malformed expression syntax) needs fixing before Save is trusted for those commands — see `docs/PROJECT_UNDERSTANDING.md` §9.
 
 ---
 
@@ -49,7 +51,7 @@ Do **NOT** use technologies outside of this list without explicit user approval.
 - We use a **Dark-Mode First, Premium Glassmorphism** aesthetic. 
 - Never use default HTML styling or generic Tailwind grays. Use the defined CSS variables (`var(--background)`, `var(--card)`).
 - We use `Montserrat Alternates` for headings and `Plus Jakarta Sans` for body text.
-- Do NOT use placeholder text or gray boxes. Use real-looking mock data and the correct UI gradients (e.g., cyan and blue accents).
+- Do NOT use placeholder text, gray boxes, or mock/fake data — this was true early on but has since hardened into an actively-enforced project rule: every fake dashboard metric, fake user identity, and fake search result found during later sessions was deliberately removed. Use real data fetched from the backend; for a genuinely unbuilt feature, use an honest "Coming Soon" state (see `ComingSoonPage.tsx`) instead of inventing content. Still use the correct UI gradients (e.g., cyan and blue accents).
 
 ### Backend & Database
 - Read `docs/engineering/07_DATABASE_SCHEMA.md` before creating tables.

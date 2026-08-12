@@ -14,6 +14,8 @@ The session that finally rebuilt the n8n workflow around slash commands (the ope
 8. Executive-dashboard polish pass: richer KPI grid (6 tiles including a week-over-week growth chip), a "Knowledge Growth" panel with growth/velocity metrics on AI Insights, and a shared `ComingSoonPage` component applied to Projects/Collaboration/Knowledge Graph (replacing their previous fake content, not just hiding it).
 9. Redesigned the Knowledge detail experience from a centered modal to a Sheet-based side panel, after a design-review discussion the user explicitly asked for before any implementation — tags/keywords became chips instead of markdown lists, Open Questions promoted to a callout near the top, the original Telegram message collapsed by default, and the component split in two (`KnowledgeDetailContent` / `KnowledgeDetailPanel`) so it can become a dedicated page later without a rewrite.
 
+A second, later pass the same day (after the above was committed as `44c2f37`) covered operational documentation and a round of real bug-hunting driven by the user actually test-driving the bot: updated `PROJECT_STATUS.md` to reflect reality and wrote `RUNNING_NGROK_AND_N8N.md`, a demo-setup runbook — which surfaced and fixed a real `.gitignore` bug that had silently kept `frontend/src/lib/` out of git entirely. Then, once the user started sending real test messages through Telegram: diagnosed a campus-network SSL interception issue blocking Supabase entirely (KAU's proxy re-signs HTTPS with an untrusted root — confirmed via both `curl` and Python failing identically), found and fixed a `TypeError` in the user's own SSL workaround (`ClientOptions(verify=False)` isn't a valid parameter in the installed `supabase-py`; the correct mechanism is passing a pre-built `httpx.Client(verify=False)`), and — the substantive find — fixed a real duplicate-detection logic flaw the user diagnosed and reported precisely: the agent was treating shared *implementation technology* (e.g. "hybrid retrieval" mentioned in both idea texts) as evidence of duplicate *intent*, flagging genuinely unrelated ideas as duplicates. Took two prompt-iteration attempts to actually fix, verified live against the user's exact reported case both times.
+
 </summary>
 
 ---
@@ -170,6 +172,79 @@ A pre-existing, non-fatal Radix `"Function components cannot be given refs"` con
 
 ---
 
+<session_update>
+
+**Start:** 05:01 AST, 2026-08-06
+**End:** 11:32 AST, 2026-08-06
+
+<part_1>
+
+## Part 1 — PROJECT_STATUS.md brought up to date; RUNNING_NGROK_AND_N8N.md written; .gitignore bug found and fixed
+
+User flagged `PROJECT_STATUS.md` as stale and not representing the session's actual work. Updated it: Milestone 5 (Phase 1 workflow validation) marked complete — validated live via n8n Cloud, per Part 5 of the previous `session_update`. Milestones 6/7 (backend + dashboard integration) marked complete but explicitly annotated "(PoC only)" with the real remaining work named (production `KnowledgeItem` schema, manager status workflow) rather than left fully unchecked, which would have understated real progress, or fully checked with no caveat, which would have overclaimed it. Added a note that only the Idea Agent is implemented. Changelog updated with a dated entry summarizing the session and linking to the full session log for detail.
+
+Wrote `RUNNING_NGROK_AND_N8N.md` (repo root) at the user's request — a runbook for bringing up the local backend + ngrok tunnel + n8n Cloud demo setup, covering one-time setup (ngrok account, static domain, CLI install), the two-terminal routine to run every demo, and a troubleshooting section built from every real issue hit earlier in the day (wrong Gemini model name, wrong Supabase key type with a decode snippet, `.env` not loading, the Windows/Git-Bash PID-mismatch restart issue).
+
+**While scoping what to `git add` for a commit** (user asked for commit-message text), discovered a real, previously-unnoticed bug: `CollaInsight/.gitignore` had a bare `lib/` pattern (line 126, a leftover from a generic Python `.gitignore` template's virtualenv-artifacts section) that was silently matching `frontend/src/lib/` — meaning `api.ts`, `useIdeas.ts`, and `insights.ts` (the entire data-fetching layer Dashboard/Knowledge/Insights all depend on) had **never been committed**, despite existing on disk since Part 6 of the previous session. `.venv`/`venv/` (already present a few lines down) already cover the real Python virtualenv case, so the bare `lib/`/`lib64/` lines were both redundant and actively harmful — removed both. Verified via `git check-ignore` before and after that this actually freed the files to be added. Gave the user a scoped `git add` file list (explicitly excluding a separate, unrelated batch of `explainer-animation`/logo file changes already in the working tree that this session never touched) and a full commit message; user committed it as `44c2f37`.
+
+</part_1>
+
+---
+
+<part_2>
+
+## Part 2 — Dashboard showing no data: root-caused to campus network SSL interception, not a code bug
+
+User reported the dashboard wasn't showing Supabase data. `GET /health` worked but `GET /api/ideas` returned a 500. Restarted the backend with logging to capture the real traceback: `httpx.ConnectError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate`. Confirmed this wasn't Python-specific by testing `curl` against the same Supabase URL directly — it failed identically (`schannel: SEC_E_UNTRUSTED_ROOT`). DNS resolution showed the resolving server as `dnslb.kaau.edu.sa` (King Abdulaziz University), confirming the user is on a campus network whose proxy performs SSL inspection (re-signs HTTPS traffic with its own untrusted root CA) — the same class of issue already documented from the unrelated `old_project` prototype's own history ("a security certificate error stopped the app from reaching the database... fixed by connecting from a different network").
+
+**Recommendation given:** switch networks (mobile hotspot, home WiFi, or a VPN bypassing the campus proxy) rather than disabling SSL verification in code, which would be insecure. The user chose to disable verification anyway (see Part 3) — their call to make given the demo-timeline pressure, not overridden.
+
+</part_2>
+
+---
+
+<part_3>
+
+## Part 3 — User's own SSL workaround had a bug; fixed via the correct API
+
+Between Part 2 and this point, the user edited `backend/ai/tools.py` directly, adding `options=ClientOptions(verify=False)` to `get_supabase()` as an SSL-bypass workaround for the Part 2 issue. This is not a valid parameter — `ClientOptions.__init__()` has no `verify` kwarg in the installed `supabase-py` version — so every call to `get_supabase()` raised `TypeError: SyncClientOptions.__init__() got an unexpected keyword argument 'verify'`. Because `search_similar_ideas` (always the first tool called) hits `get_supabase()` immediately, this meant **every** `/idea` submission with actual content failed with a generic 500 ("Internal Server Error" in Telegram, and n8n Cloud's own failure-notification email) — the user initially suspected Arabic-text handling or an n8n-side problem specifically, since their first test (an empty `/idea`, which returns before ever touching Supabase) had "worked."
+
+Reproduced directly against the local backend with logging to get the real traceback and confirm root cause, then fixed properly: `ClientOptions` doesn't expose `verify` directly, but accepts a pre-built `httpx_client`, so the fix is `ClientOptions(httpx_client=httpx.Client(verify=False))`. Verified live by resubmitting the user's exact failing message directly against the backend — saved correctly afterward. Documented in the code comment that this is a KAU-network-specific workaround, confirmed not a Python-only issue, and should not be treated as fine for any untrusted network in production.
+
+</part_3>
+
+---
+
+<part_4>
+
+## Part 4 — Generated a categorized Telegram test-message set
+
+At the user's request, wrote a set of copy-paste-ready `/idea` test messages designed to exercise distinct paths through the pipeline: empty-input validation, a basic English idea, a basic Arabic idea (specifically to exercise the Arabic-keyword regex the user had added to `search_similar_ideas` in the previous session), a near-duplicate pair (to test `flag_as_duplicate`), a deliberately vague idea (to check `open_questions` fills with honest gaps instead of invented detail), a fully-detailed idea (to check the opposite — few/no open questions when nothing is actually missing), a code-switched Arabic/English message, and a long rambling message (to check summarization quality). No files changed — message content only.
+
+</part_4>
+
+---
+
+<part_5>
+
+## Part 5 — Real duplicate-detection logic bug found via user testing; fixed in two iterations
+
+Working through the Part 4 test set surfaced two issues, both against real submitted data:
+
+1. **False "new style of reply" confusion** — the user resent an idea that came back as a duplicate instead of saved, and didn't recognize why. Root cause: an assistant-run diagnostic `curl` call during Part 3's bug reproduction had already inserted an identical idea into `poc_ideas` under a `repro_test` identity moments earlier, so the duplicate flag was correct — it matched the assistant's own test row, not a bug. Deleted the test row afterward so the table only reflects genuine Telegram activity, consistent with the standing instruction from the previous session's Part 5.
+
+2. **A genuine duplicate-detection logic flaw**, reported by the user with a detailed, well-reasoned bug report: an idea proposing "AI academic assistant for students" (which happened to mention hybrid retrieval as one implementation detail) caused a *later, unrelated* idea proposing "replace our search with a hybrid retrieval architecture" to be incorrectly flagged as a duplicate — the agent was treating shared **implementation technology** (hybrid retrieval, vector search, metadata filtering) as evidence of duplicate **intent**, when the two ideas solve entirely different problems (a product feature vs. a search-architecture change) and only share a technique. The user's own bug report proposed the fix direction (compare problem/objective/user value/feature, not shared technology).
+   - **First fix attempt** (`idea_agent_prompt.md`): added explicit comparison dimensions (problem being solved / objective / user value / feature) and a negative worked example matching the user's exact scenario. **Retested live — still failed**, still flagged as a duplicate with reasoning that still conflated the shared technology with shared intent. The abstract guidance wasn't concrete enough for the model (a fast/lite Gemini variant, more prone to surface-pattern-matching than deep reasoning) to reliably apply, especially since the *actual* retrieved summary text for the existing idea prominently described its hybrid-retrieval implementation, making the surface overlap look substantial.
+   - **Second fix** (`idea_agent_prompt.md`): added a mandatory mechanical self-check — before calling `flag_as_duplicate()`, mentally strip every mention of the shared technology from both ideas and re-evaluate whether they still describe the same problem/feature; if the similarity only existed *because of* the shared technology mention, it is not a duplicate. This is a concrete, mechanical test rather than an abstract judgment call. **Retested live against the user's exact reported case — fixed.** The retrieval-architecture idea now saves correctly as new. Test row cleaned up afterward.
+
+Both fixes required a backend restart to take effect — `idea_agent.py` loads the system prompt from the `.md` file once at process start, not per-request, which was called out explicitly to the user since it's a real gotcha when iterating on the prompt live.
+
+</part_5>
+
+</session_update>
+
+---
+
 <open_items>
 
 ## Open items / not yet done
@@ -178,16 +253,21 @@ A pre-existing, non-fatal Radix `"Function components cannot be given refs"` con
 - **No auth on `POST /api/idea` or `GET /api/ideas`.** Both are wide open behind the ngrok tunnel/CORS `*` — acceptable for a short rehearsal demo window per the PoC framing, but the tunnel should not be left running unattended, and this needs real auth before anything beyond a rehearsal.
 - **`poc_ideas` is not the production schema.** No `status` field (Pending/Approved/Duplicate/etc. from `07_DATABASE_SCHEMA.md`), no `Project`/`PlatformUser` entities — flat table, PoC-only. `backend/README.md`'s "Evolving this into production" section is the intended migration path when that work actually starts.
 - **No manager review/status workflow exists at all.** The "Mark as Reviewed" button added in Part 9 is intentionally disabled — there's no backend support for it yet.
-- **The presentation deck's "Automatic AI Duplicate Detection" line under `POST_MVP` contradicts what's actually built and demoed live** (flagged in Part 7, not resolved — the user needs to either reword the slide or decide the deck means something more specific, like cross-corpus background dedup, before presenting).
+- **The presentation deck's "Automatic AI Duplicate Detection" line under `POST_MVP` contradicts what's actually built and demoed live** (flagged in the first `session_update`'s Part 7, not resolved — the user needs to either reword the slide or decide the deck means something more specific, like cross-corpus background dedup, before presenting).
 - **A view-transition rendering issue was observed during browser-based testing** (Dashboard/Knowledge/Insights/etc. sidebar navigation appeared to "stick" on the previous page's content after a click, in the automated test browser only). Investigated and reverted an exploratory fix (`AnimatePresence mode="wait"` removal) once it became clear the issue reproduced identically on an untouched page (`ProjectsView`) and is most likely an artifact of that specific browser pane not compositing frames (confirmed via a tool-level error message stating exactly that), not a real app bug — but this was never confirmed in an actual visible browser. Worth a real click-through before presenting.
-- **ngrok tunnel + local `uvicorn` backend must both be running** for the live Telegram demo to work — not a standing deployment, has to be started manually each time (see `backend/README.md`).
-- **`docs/PROJECT_UNDERSTANDING.md` still says the n8n-vs-backend Supabase-write question is "not yet decided"** — Part 2 of this session resolved it in favor of the backend, but the doc itself hasn't been updated to reflect that.
+- **ngrok tunnel + local `uvicorn` backend must both be running** for the live Telegram demo to work — not a standing deployment, has to be started manually each time (see `RUNNING_NGROK_AND_N8N.md`).
+- **`docs/PROJECT_UNDERSTANDING.md` still says the n8n-vs-backend Supabase-write question is "not yet decided"** — resolved in favor of the backend early in this session, but the doc itself hasn't been updated to reflect that.
+- **SSL certificate verification is disabled (`verify=False`) for all Supabase traffic from the backend**, worked around specifically for the KAU campus network's SSL-inspecting proxy (see second `session_update`, Parts 2–3). This is a real security tradeoff, not just a style choice — acceptable as a stopgap for a local rehearsal demo, but should not ship as-is; switching networks (mobile hotspot/VPN) instead of disabling verification remains the cleaner fix if there's time before the final presentation.
+- **The duplicate-detection prompt fix (second `session_update`, Part 5) was verified only against the one specific case the user reported.** It's a fast/lite Gemini model that needed a fairly forceful, mechanical instruction to get this right rather than abstract guidance — worth a broader spot-check with a few more shared-technology-but-different-intent pairs before relying on it in front of an audience.
+- **The `.gitignore` fix and `frontend/src/lib/` files are now committed** (as of commit `44c2f37`) — this closes what was previously an open risk (an entire dependency directory silently untracked), noted here only so it's not mistaken for still-open.
 
 </open_items>
 
 ---
 
 <files_touched_this_session>
+
+**First `session_update` (23:37 2026-08-05 – 04:55 2026-08-06) — now committed as `44c2f37` "Polish executive dashboard, redesign knowledge detail as side panel, fix gitignore":**
 
 **Backend:**
 - `backend/ai/tools.py` (new; later also edited by the user directly — Arabic-keyword regex support in `search_similar_ideas`, kept as-is)
@@ -231,6 +311,22 @@ A pre-existing, non-fatal Radix `"Function components cannot be given refs"` con
 - `telegram_chat_title` column added via `alter table` after the table already had real rows
 - Rows 3–10 deleted (Part 5 cleanup — the assistant's own backend-testing artifacts)
 
-Nothing has been committed to git this session — all changes above are sitting in the working tree. Confirm status independently before assuming otherwise.
+All of the above is committed as of `44c2f37`.
+
+---
+
+**Second `session_update` (05:01 – 11:32, 2026-08-06):**
+
+- `CollaInsight/PROJECT_STATUS.md` (updated to reflect actual state) — committed in `44c2f37`
+- `CollaInsight/.gitignore` (removed the bare `lib/`/`lib64/` lines that were silently excluding `frontend/src/lib/`) — committed in `44c2f37`
+- `CollaInsight/RUNNING_NGROK_AND_N8N.md` (new — demo-setup runbook) — committed in `44c2f37`
+- `backend/ai/tools.py` (`get_supabase()` fixed to use `ClientOptions(httpx_client=httpx.Client(verify=False))` instead of the invalid `verify=False` kwarg) — **not yet committed**
+- `backend/ai/idea_agent_prompt.md` (two edits — comparison dimensions/example, then the mandatory technology-strip self-check — to fix the duplicate-detection logic flaw) — **not yet committed**
+
+**Supabase (data, not files):**
+- Row 13 (`repro_test`, the assistant's Part 3 bug-reproduction insert) deleted after the user reported unexpected duplicate-flagging that turned out to be a match against this row.
+- Row 21 (`repro_test`, the assistant's Part 5 duplicate-detection-fix verification insert) deleted after confirming the fix.
+
+Confirm current git status independently before assuming the above commit annotations are still accurate — this reflects `git log`/`git status` as checked during this session, not a live guarantee.
 
 </files_touched_this_session>

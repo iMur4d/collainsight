@@ -519,7 +519,7 @@ export function LandingPage({ onEnter }: { onEnter: () => void }) {
       </section>
 
       <footer className="border-t border-white/5 py-10 px-6 text-center text-sm text-[#6b7599]">
-        <p>© 2025 CollaInsight. AI-powered knowledge for teams that think ahead.</p>
+        <p>© 2026 CollaInsight. AI-powered knowledge for teams that think ahead.</p>
       </footer>
     </div>
   );

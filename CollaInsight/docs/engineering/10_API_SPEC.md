@@ -149,6 +149,7 @@ Responsibilities
 - Submit AI Processing Requests
 - Retrieve AI Results
 - Retrieve AI Metadata
+- Answer grounded, read-only questions over already-confirmed knowledge (MVP: `POST /api/insights/chat`) — reads through a restricted, Telegram-metadata-free view via a dedicated least-privilege database role, never the raw knowledge tables. See `13_SECURITY.md`.
 
 AI responses must always be validated before storage.
 

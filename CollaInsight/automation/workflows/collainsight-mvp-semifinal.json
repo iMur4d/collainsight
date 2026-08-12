@@ -1,0 +1,3689 @@
+{
+  "name": "CollaInsight - Phase 1 - Discussion Extraction",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# CollaInsight — MVP Orchestration Workflow\n\n**n8n is the orchestration layer. `/idea` calls the Python backend (LangGraph PoC) for its AI logic. The other five commands perform their AI refinement directly inside n8n, with one type-specific prompt/schema per command. Each model call also returns a bounded semantic-completeness signal; n8n remains responsible for the deterministic decision to continue or stop.**\n\n```\n/idea:                                            Telegram → n8n → Python Backend (LangGraph Agent) → Supabase → n8n → Telegram Reply\n/question /suggestion /decision /action /observation:  Telegram → n8n → Gemini (type-specific structured JSON) → Supabase (direct) → n8n → Telegram Reply\n```\n\nThis workflow:\n1. Receives every Telegram message.\n2. Keeps only slash-command messages (`/idea`, `/question`, ...) — the command IS the classification, no AI guessing here.\n3. Routes by command with a Switch node.\n4. `/idea` calls the backend's `POST /api/idea` (LangGraph agent — search, compare, save-or-flag-duplicate). Unchanged from before — kept as the reference PoC.\n5. The other five commands each get their OWN prompt and OWN JSON schema, not a shared generic one — a Question, a Decision, and an Observation are genuinely different kinds of knowledge, not the same \"thought\" with a different label. Each: validate content → build its type-specific prompt → call Gemini for its type-specific structured JSON → validate that output → block malformed/incomplete items → insert only valid, sufficiently clear items into that type's own Supabase table → reply. No backend involved.\n\n**Grounded extraction + bounded semantic completeness:** every prompt below is written to preserve what the submitter actually said — never resolve a Question, never judge a Decision, never invent an owner/deadline/rationale/target that wasn't stated. Fields that require unstated information are `nullable` and left `null` rather than guessed.\n\n**Why the split (n8n vs backend):** the five commands' extraction is single-shot structured generation, not multi-step reasoning — a good fit for n8n's deterministic orchestration. The backend stays reserved for AI work that genuinely needs Python/agentic logic — e.g. Idea's search-then-decide duplicate check today, and later Insights AI, RAG, entity resolution, ranking, or other non-trivial reasoning.\n\n**Why an HTTP Request node calls Gemini directly, not a native n8n AI node:** verified before building this — as of this workflow, neither n8n's `Google Gemini` app node nor the LangChain `Google Gemini Chat Model` sub-node exposes Gemini's native `responseSchema` structured-output parameter (confirmed via n8n's own community forum; the community's own workaround for schema-enforced JSON is either an unreliable Output Parser node or a direct API call). A plain HTTP Request to `generateContent` with `generationConfig.responseMimeType`/`responseSchema` is the only way to get Gemini's guaranteed-shape JSON today — verified against Google's own REST reference, not assumed from memory.\n\n**Why the five Supabase inserts use the native `Supabase` node, not HTTP Request:** also verified, not assumed — n8n does ship a native Supabase node (`n8n-nodes-base.supabase`, credential type `supabaseApi`) with a `row → create` operation that maps each column explicitly via `fieldsUi` (field name → expression), confirmed directly from n8n's own source. Unlike the Gemini case, this one IS fully capable of what's needed here, so it replaces the earlier HTTP-based insert. One shared credential (project URL + service key) covers all five insert nodes instead of five copies of the same header pair.\n\n**Guardrail added in this revision:** every n8n-native knowledge branch now has an explicit `Ready to Save <Type>?` gate. Invalid model output and semantically incomplete submissions never reach Supabase. Incomplete submissions return one focused clarification question.\n\n**Telegram UX added:** `/start` and `/help` now have real static branches in n8n.\n\n**Human confirmation:** complete items are first written to a temporary `pending_knowledge` record and previewed in Telegram with Save/Cancel buttons. The permanent knowledge table is written only after a callback from the same Telegram user; Save and Cancel both remove the temporary record.",
+        "height": 920,
+        "width": 1300,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        9328,
+        -4208
+      ],
+      "id": "31d9b454-8632-4448-9fe6-148933bd847f",
+      "name": "Sticky - Architecture Overview"
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message",
+          "callback_query"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        10560,
+        -2032
+      ],
+      "id": "7cfccdb1-b98d-42bf-b189-54a18b1122c7",
+      "name": "Telegram Trigger",
+      "webhookId": "b3f6d8c1-4e3b-4f7a-9c15-7b8e2d1a6f94",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "1a2b3c4d-0001-4000-8000-000000000001",
+              "leftValue": "={{ $json.message.text }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "1a2b3c4d-0001-4000-8000-000000000002",
+              "leftValue": "={{ $json.message.text }}",
+              "rightValue": "/",
+              "operator": {
+                "type": "string",
+                "operation": "startsWith"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        10816,
+        -2032
+      ],
+      "id": "d6b281bb-d1eb-467c-aed3-c4b072203d23",
+      "name": "Is Command"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const msg = $json.message;\nconst text = (msg && msg.text || '').trim();\nconst parts = text.split(/\\s+/);\nconst command = (parts[0] || '').toLowerCase();\nconst content = parts.slice(1).join(' ').trim();\nconst from = msg.from || {};\n\nreturn {\n  json: {\n    command,\n    // idea_text: kept exactly as-is so the existing /idea branch is untouched.\n    idea_text: content,\n    // content_text: generic alias of the same value, used by the other five\n    // command branches (question/suggestion/decision/action/observation) so\n    // they don't each need their own copy of this parsing logic.\n    content_text: content,\n    // Display-only attribution (matches 07_DATABASE_SCHEMA.md's MVP scope note:\n    // Telegram participants are identified by raw username/first name, not a\n    // persistent account ID - no account linking exists in the MVP).\n    telegram_display_name: from.username || from.first_name || 'unknown',\n    // Used only to authorize Save/Cancel callbacks. It is NOT written\n    // to the permanent knowledge tables.\n    telegram_user_id: from.id != null ? String(from.id) : null,\n    chat_id: msg.chat.id,\n    // Group name, not personal data - only present for groups/supergroups,\n    // not private chats (msg.chat.title is undefined there).\n    chat_title: msg.chat.title || null,\n    message_id: msg.message_id\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        11072,
+        -2032
+      ],
+      "id": "d4ffa265-dc62-41ab-a35a-201b98b79d32",
+      "name": "Parse Command"
+    },
+    {
+      "parameters": {
+        "content": "**Command Router**\nSwitch on `$json.command`. `/idea` routes to the existing backend PoC. The five structured-knowledge commands route to their n8n-native branches. `/start` and `/help` are static Telegram UX branches. Unknown commands fall back to NoOp.",
+        "width": 500,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        11152,
+        -2352
+      ],
+      "id": "9b011f65-0b98-40cf-8569-c29cd0a93715",
+      "name": "Sticky - Router Explanation"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "2a2b3c4d-0002-4000-8000-000000000001",
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "/idea",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "idea"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "2a2b3c4d-0002-4000-8000-000000000002",
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "/question",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "question"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "2a2b3c4d-0002-4000-8000-000000000003",
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "/suggestion",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "suggestion"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "2a2b3c4d-0002-4000-8000-000000000004",
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "/decision",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "decision"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "2a2b3c4d-0002-4000-8000-000000000005",
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "/action",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "action"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "2a2b3c4d-0002-4000-8000-000000000006",
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "/observation",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "observation"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "987be501-4e3d-49df-a231-f9707988ff19",
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "/start",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "start"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "1c0e8851-329e-474b-81a4-5f1dd154b2cb",
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "/help",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "help"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "unknown"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        11344,
+        -2144
+      ],
+      "id": "2add5490-0b0e-4aae-87b3-ea707f5101d8",
+      "name": "Command Router"
+    },
+    {
+      "parameters": {
+        "content": "**IDEA AGENT — Implemented for MVP, calls the backend**\nValidates content → calls Python backend `POST /api/idea` → relays the structured JSON reply to Telegram.\n\nAll extraction/dedup/save logic runs in the backend (LangGraph). This branch never touches AI directly. Unchanged reference implementation — the five branches below intentionally do NOT follow this backend-calling pattern; see the note above the router.",
+        "height": 180,
+        "width": 780,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        12048,
+        -4064
+      ],
+      "id": "f71ea985-cee8-4938-8d9a-95f8ed898718",
+      "name": "Sticky - Idea Branch Explanation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "3a2b3c4d-0003-4000-8000-000000000001",
+              "leftValue": "={{ $json.idea_text }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        11776,
+        -3840
+      ],
+      "id": "601ea6a4-5613-457c-9f56-2da95f856a77",
+      "name": "Validate Idea Content"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://carpentry-distant-retrain.ngrok-free.dev/api/idea",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "REPLACE_WITH_BACKEND_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telegram_display_name: $json.telegram_display_name, chat_id: $json.chat_id, chat_title: $json.chat_title, message_id: $json.message_id, idea_text: $json.idea_text }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        12032,
+        -3856
+      ],
+      "id": "2bde6ed8-8f91-4e6b-b2a5-3da97345641b",
+      "name": "Call Idea Agent (POST /api/idea)"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const res = $json;\nconst isNew = res.status === 'saved';\nconst text = isNew\n  ? `✅ Idea saved!\\n📌 ${res.title}\\n${res.summary}`\n  : `ℹ️ ${res.title || 'This looks similar to an existing idea'}\\n${res.summary || 'A similar idea already exists — nothing new was saved.'}`;\n\nreturn { json: { reply_text: text, status: res.status, similar_found: res.similar_found } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12288,
+        -3856
+      ],
+      "id": "970d8626-c618-4cc8-acdf-9f9def4ee9ed",
+      "name": "Format Idea Reply"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Command').item.json.chat_id }}",
+        "text": "={{ $json.reply_text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        12560,
+        -3856
+      ],
+      "id": "95d0a931-87e2-4e42-8b64-dcb9b4258c12",
+      "name": "Reply - Idea Saved",
+      "webhookId": "9bdb33f0-4da1-4bf6-8201-090d86c86f3b",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "⚠️ Please include your idea after the /idea command.\nExample: /idea Add a peer mentorship matching feature",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        12032,
+        -3632
+      ],
+      "id": "0961aeed-c611-4a2f-9a2d-1fe4ea1060f2",
+      "name": "Reply - Missing Idea Text",
+      "webhookId": "83a09807-5553-4f8c-b093-6cf974851d72",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        11744,
+        416
+      ],
+      "id": "70f3efda-a018-46da-82cb-6b35f849d6af",
+      "name": "Unknown Command (Ignored)"
+    },
+    {
+      "parameters": {
+        "content": "**⚙️ SETUP PLACEHOLDERS — replace before running**\n\n1. **Telegram Trigger** & every **Telegram Reply** node (12 total — 2 per command) → set the real Telegram Bot credential (currently `REPLACE_ME`). All share the same bot.\n2. **Call Idea Agent** node (the only backend call) → replace `http://YOUR_BACKEND_URL:8000/api/idea` and its `X-API-Key` header, same as before.\n3. Every **Call Gemini - <X>** node (5 total) still uses the direct Gemini REST endpoint because the workflow relies on `responseSchema`. Prefer binding your existing Google Gemini(PaLM) API credential in the HTTP Request node if available, rather than exporting a raw API key in the workflow JSON.\n\n4. Every **Insert <X> to Supabase** node (5 total, native Supabase node) → set the real Supabase credential (currently `REPLACE_ME`) — one credential (Host = your project URL, Secret Key = service-role/secret key) covers all five nodes, no per-node headers needed.\n5. Every **Insert <X> to Supabase** node's `fieldsUi` rows reference column names by string (e.g. `question_text`, `title`) — n8n normally populates these as a live dropdown from your actual table's columns once a credential + `tableId` are set. Reopen each node in the editor after step 4 and re-pick each field from the dropdown to confirm it resolves against your real table (the string values are already correct, this just re-binds them to n8n's live column list).\n6. **Create the five Supabase tables first** — DDL in the sticky note below (`poc_questions`, `poc_suggestions`, `poc_decisions`, `poc_actions`, `poc_observations`). Without them every insert will fail.\n7. `/start` and `/help` are now implemented directly in n8n.\n8. Test both branches of each `Ready to Save <Type>?` gate: a normal complete input and an intentionally ambiguous input.\n9. **Reply - DM Unavailable** node → replace `YOUR_BOT_USERNAME_HERE` in the `https://t.me/YOUR_BOT_USERNAME_HERE` link with your actual bot's @username (from BotFather) — not available anywhere in this workflow/credential to derive automatically, so it's a manual placeholder like the others above.\n10. Test both confirmation paths live: (a) a user who has already DMed the bot before → confirmation arrives privately, group only sees \"✅ Check your DMs to confirm.\"; (b) a user who has never DMed the bot → group sees the DM-unavailable instructions instead, no preview/buttons ever appear in the group either way.\n",
+        "height": 680,
+        "width": 700,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        9600,
+        -2976
+      ],
+      "id": "b2e222dc-5ffb-471c-b81c-0af0155faf6b",
+      "name": "Sticky - Setup Placeholders"
+    },
+    {
+      "parameters": {
+        "content": "**Supabase tables needed for the five n8n-native branches**\n(Run once, before using `/question`, `/suggestion`, `/decision`, `/action`, or `/observation`. Each table's extra column matches that type's own schema, not a copy of Idea's or each other's.)\n\n```sql\ncreate table poc_questions (\n  id bigint generated always as identity primary key,\n  question_text text not null,\n  title text not null,\n  summary text not null,\n  is_blocking boolean not null default false,\n  addressed_to text,\n  tags jsonb not null default '[]',\n  keywords jsonb not null default '[]',\n  telegram_display_name text,\n  telegram_chat_id text,\n  telegram_chat_title text,\n  telegram_message_id text,\n  created_at timestamptz not null default now()\n);\n\ncreate table poc_suggestions (\n  id bigint generated always as identity primary key,\n  suggestion_text text not null,\n  title text not null,\n  summary text not null,\n  target text,\n  tags jsonb not null default '[]',\n  keywords jsonb not null default '[]',\n  telegram_display_name text,\n  telegram_chat_id text,\n  telegram_chat_title text,\n  telegram_message_id text,\n  created_at timestamptz not null default now()\n);\n\ncreate table poc_decisions (\n  id bigint generated always as identity primary key,\n  decision_text text not null,\n  title text not null,\n  summary text not null,\n  rationale text,\n  tags jsonb not null default '[]',\n  keywords jsonb not null default '[]',\n  telegram_display_name text,\n  telegram_chat_id text,\n  telegram_chat_title text,\n  telegram_message_id text,\n  created_at timestamptz not null default now()\n);\n\ncreate table poc_actions (\n  id bigint generated always as identity primary key,\n  action_text text not null,\n  title text not null,\n  summary text not null,\n  owner text,\n  due text,\n  tags jsonb not null default '[]',\n  keywords jsonb not null default '[]',\n  telegram_display_name text,\n  telegram_chat_id text,\n  telegram_chat_title text,\n  telegram_message_id text,\n  created_at timestamptz not null default now()\n);\n\ncreate table poc_observations (\n  id bigint generated always as identity primary key,\n  observation_text text not null,\n  title text not null,\n  summary text not null,\n  tags jsonb not null default '[]',\n  keywords jsonb not null default '[]',\n  telegram_display_name text,\n  telegram_chat_id text,\n  telegram_chat_title text,\n  telegram_message_id text,\n  created_at timestamptz not null default now()\n);\n```\n\nEach table is deliberately separate (mirrors `poc_ideas`) and deliberately minimal — none of them copy Idea's richer `concepts`/`assumptions`/`open_questions` fields, which were purpose-built for Idea through iteration, and none of them copy each other's type-specific column either (`is_blocking`/`addressed_to` only make sense for Question, `owner`/`due` only for Action, etc.). Extend per-category further once real usage patterns are understood; this is not the production `KnowledgeItem` schema.",
+        "height": 900,
+        "width": 700,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        9584,
+        -2224
+      ],
+      "id": "742d1bf8-9db7-4ed8-be12-44436fd1b8ab",
+      "name": "Sticky - Supabase Table DDL"
+    },
+    {
+      "parameters": {
+        "content": "**QUESTION — type-specific schema: title, summary, is_blocking, addressed_to, tags, keywords**\nA Question needs an answer from someone else, especially if blocking. This branch preserves what was asked — it never answers the question and never guesses who should respond.\n\n`is_blocking` is true ONLY if the message explicitly says this is urgent/blocking/needed before something else can proceed — never inferred from tone. `addressed_to` is filled ONLY if a specific person/role is named in the text — otherwise null.\n\nNo duplicate-check step here (unlike Idea) — kept intentionally simple.",
+        "height": 180,
+        "width": 1800,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        12032,
+        -3328
+      ],
+      "id": "8aae02cd-2d54-4ffe-97c5-27d908eba06d",
+      "name": "Sticky - Question Branch Explanation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "4a2b3c4d-0004-4000-8000-000000000001",
+              "leftValue": "={{ $json.content_text }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        11776,
+        -3104
+      ],
+      "id": "150e4950-433c-40f2-9dbd-43c243eda017",
+      "name": "Validate Question Content"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const content = $json.content_text;\nconst instructions = `You are extracting a QUESTION raised in a Telegram discussion for a training program's manager dashboard. A Question is something that needs an answer from someone else, especially if it is blocking progress. Your job is to preserve what was asked - you never answer the question yourself, and you never guess who should respond or what the answer might be.\n\nRead the submitted message and produce:\n- title: a short, specific title (under 8 words)\n- summary: the question itself, restated clearly if needed, but not answered or resolved\n- is_blocking: true ONLY if the message explicitly says this is urgent, blocking, or needed before something else can proceed. Do not infer urgency from tone or phrasing alone - if it is not stated, use false.\n- addressed_to: the specific person or role the question is directed at, ONLY if explicitly named in the message (e.g. a mention, or \"can someone from the design team...\"). If no one is named, use null. Never guess who should answer.\n- tags: short lowercase topical labels\n- keywords: key terms useful for future search\n\nBefore producing the final item, judge whether the submitted text contains enough context to preserve a useful standalone Question.\n- needs_clarification: true ONLY when the core referent or actual question is too ambiguous to understand later without guessing.\n- clarifying_question: if needs_clarification is true, ask ONE short, specific follow-up question. Otherwise use null.\nDo NOT mark an item incomplete just because optional fields such as addressed_to are missing.\n\nNever add information, an answer, or a name that is not present in the message. Respond with JSON only, matching the given schema exactly.\n\nLANGUAGE POLICY:\n- Generate all user-facing and knowledge text in the same primary language as the user's submitted content.\n- If the input is primarily Arabic, write the title, summary, tags, keywords, and clarifying_question in Arabic.\n- If the input is primarily English, write them in English.\n- For mixed-language input, follow the dominant natural language of the message.\n- Preserve technical terms, product names, acronyms, and commonly used English technical vocabulary when translating them would sound unnatural or reduce precision (for example: GitHub, Telegram, API, commit, Supabase, n8n).\n- Do not switch the entire output to English merely because the input contains English technical terms.\n- Do not translate the user's content into another language unless explicitly requested.`;\nreturn { json: { ...$json, ai_prompt: `${instructions}\n\nSubmitted question:\n${content}` } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12032,
+        -3120
+      ],
+      "id": "76548b54-23cb-474c-a759-6b89b51289b3",
+      "name": "Prepare Question Prompt"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-goog-api-key",
+              "value": "REPLACE_WITH_GEMINI_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $json.ai_prompt }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'object', properties: { title: { type: 'string' }, summary: { type: 'string' }, is_blocking: { type: 'boolean' }, addressed_to: { type: 'string', nullable: true }, tags: { type: 'array', items: { type: 'string' } }, keywords: { type: 'array', items: { type: 'string' } }, needs_clarification: { type: 'boolean' }, clarifying_question: { type: 'string', nullable: true } }, required: ['title', 'summary', 'is_blocking', 'tags', 'keywords', 'needs_clarification'] } } }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        12336,
+        -3120
+      ],
+      "id": "4082813b-afce-414b-91c3-bfc346379015",
+      "name": "Call Gemini - Question",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "qR2VlPng3vVhu6dU",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $json.candidates?.[0]?.content?.parts?.[0]?.text;\nlet parsed;\ntry {\n  parsed = JSON.parse(raw);\n} catch (e) {\n  return { json: { status: 'error', title: '', summary: 'Could not parse the AI response - please try again.', is_blocking: false, addressed_to: null, tags: [], keywords: [], needs_clarification: false, clarifying_question: null } };\n}\n\nconst structurallyValid =\n  parsed &&\n  typeof parsed.title === 'string' &&\n  typeof parsed.summary === 'string' &&\n  Array.isArray(parsed.tags) &&\n  Array.isArray(parsed.keywords) &&\n  typeof parsed.needs_clarification === 'boolean';\n\nif (!structurallyValid) {\n  return { json: { status: 'error', title: '', summary: 'AI response was missing required fields - please try again.', is_blocking: false, addressed_to: null, tags: [], keywords: [], needs_clarification: false, clarifying_question: null } };\n}\n\nreturn {\n  json: {\n    status: 'ok',\n    title: parsed.title,\n    summary: parsed.summary, is_blocking: parsed.is_blocking ?? false, addressed_to: parsed.addressed_to ?? null,\n    tags: parsed.tags,\n    keywords: parsed.keywords,\n    needs_clarification: parsed.needs_clarification,\n    clarifying_question: parsed.clarifying_question ?? null\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12640,
+        -3120
+      ],
+      "id": "97da77a6-45a4-4aeb-8567-b648346cabb6",
+      "name": "Validate Question Output"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "⚠️ Please include your question after the /question command.\nExample: /question Will the deadline move to next month?",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        12032,
+        -2896
+      ],
+      "id": "2d273b34-0f4e-4b66-8e14-3de4e1e173f1",
+      "name": "Reply - Missing Question Text",
+      "webhookId": "2e918d66-e4dc-468e-bba8-46de64a3303e",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "**SUGGESTION — type-specific schema: title, summary, target, tags, keywords**\nA Suggestion proposes a change or improvement to something that ALREADY EXISTS — not a brand-new idea. This branch preserves what should change and why; it never invents a justification the submitter didn't give.\n\n`target` is filled ONLY if the existing thing being improved is explicitly named (e.g. \"the onboarding flow\") — otherwise null. This is Suggestion's distinguishing field versus Idea, which has no \"existing thing\" to point at.",
+        "height": 180,
+        "width": 1800,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        12000,
+        -2640
+      ],
+      "id": "20c90435-0b7d-4aaa-9aac-dde221dcff6d",
+      "name": "Sticky - Suggestion Branch Explanation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "4a2b3c4d-0004-4000-8000-000000000002",
+              "leftValue": "={{ $json.content_text }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        11776,
+        -2400
+      ],
+      "id": "8f8e1af1-8877-4360-bcea-71b96d7e1030",
+      "name": "Validate Suggestion Content"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const content = $json.content_text;\nconst instructions = `You are extracting a SUGGESTION raised in a Telegram discussion for a training program's manager dashboard. A Suggestion proposes a change or improvement to something that already exists - it is not a brand-new idea. Your job is to preserve what should change and why - never invent a justification the submitter did not give, and never turn this into a new-idea pitch.\n\nRead the submitted message and produce:\n- title: a short, specific title (under 8 words)\n- summary: one to two sentences describing what should change and, only if stated, why\n- target: the existing thing being improved (a feature, process, document, etc.), ONLY if explicitly named in the message. If it is not named, use null. Never guess what it targets.\n- tags: short lowercase topical labels\n- keywords: key terms useful for future search\n\nJudge whether the submitted text contains enough context to preserve a useful standalone Suggestion.\n- needs_clarification: true ONLY when the proposed change or what it refers to is too ambiguous to understand later without guessing.\n- clarifying_question: if needs_clarification is true, ask ONE short, specific follow-up question. Otherwise use null.\nDo NOT mark an item incomplete merely because the optional target is not explicitly named when the suggestion itself is still understandable.\n\nNever add information not present in the message. Respond with JSON only, matching the given schema exactly.\n\nLANGUAGE POLICY:\n- Generate all user-facing and knowledge text in the same primary language as the user's submitted content.\n- If the input is primarily Arabic, write the title, summary, tags, keywords, and clarifying_question in Arabic.\n- If the input is primarily English, write them in English.\n- For mixed-language input, follow the dominant natural language of the message.\n- Preserve technical terms, product names, acronyms, and commonly used English technical vocabulary when translating them would sound unnatural or reduce precision (for example: GitHub, Telegram, API, commit, Supabase, n8n).\n- Do not switch the entire output to English merely because the input contains English technical terms.\n- Do not translate the user's content into another language unless explicitly requested.`;\nreturn { json: { ...$json, ai_prompt: `${instructions}\n\nSubmitted suggestion:\n${content}` } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12000,
+        -2416
+      ],
+      "id": "79332c74-afae-46b3-aa77-464a24d7d463",
+      "name": "Prepare Suggestion Prompt"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-goog-api-key",
+              "value": "REPLACE_WITH_GEMINI_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $json.ai_prompt }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'object', properties: { title: { type: 'string' }, summary: { type: 'string' }, target: { type: 'string', nullable: true }, tags: { type: 'array', items: { type: 'string' } }, keywords: { type: 'array', items: { type: 'string' } }, needs_clarification: { type: 'boolean' }, clarifying_question: { type: 'string', nullable: true } }, required: ['title', 'summary', 'tags', 'keywords', 'needs_clarification'] } } }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        12304,
+        -2416
+      ],
+      "id": "d0a4b4ff-0d78-4649-8f73-7265d3398c70",
+      "name": "Call Gemini - Suggestion",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "qR2VlPng3vVhu6dU",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $json.candidates?.[0]?.content?.parts?.[0]?.text;\nlet parsed;\ntry {\n  parsed = JSON.parse(raw);\n} catch (e) {\n  return { json: { status: 'error', title: '', summary: 'Could not parse the AI response - please try again.', target: null, tags: [], keywords: [], needs_clarification: false, clarifying_question: null } };\n}\n\nconst structurallyValid =\n  parsed &&\n  typeof parsed.title === 'string' &&\n  typeof parsed.summary === 'string' &&\n  Array.isArray(parsed.tags) &&\n  Array.isArray(parsed.keywords) &&\n  typeof parsed.needs_clarification === 'boolean';\n\nif (!structurallyValid) {\n  return { json: { status: 'error', title: '', summary: 'AI response was missing required fields - please try again.', target: null, tags: [], keywords: [], needs_clarification: false, clarifying_question: null } };\n}\n\nreturn {\n  json: {\n    status: 'ok',\n    title: parsed.title,\n    summary: parsed.summary, target: parsed.target ?? null,\n    tags: parsed.tags,\n    keywords: parsed.keywords,\n    needs_clarification: parsed.needs_clarification,\n    clarifying_question: parsed.clarifying_question ?? null\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12608,
+        -2416
+      ],
+      "id": "2bb0f395-8137-4b9a-aea7-d58e381225d5",
+      "name": "Validate Suggestion Output"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "⚠️ Please include your suggestion after the /suggestion command.\nExample: /suggestion Add a dark mode toggle to the settings page",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        12000,
+        -2208
+      ],
+      "id": "567e04e1-f903-4aa3-97e7-6a5f4000fab4",
+      "name": "Reply - Missing Suggestion Text",
+      "webhookId": "09523430-4568-4538-a8ed-176afcb8e63f",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "**DECISION — type-specific schema: title, summary, rationale, tags, keywords**\nA Decision is a choice already made or agreed on, even if stated briefly. This branch's ONLY job is to record it — it never evaluates whether the decision was a good one, never suggests alternatives, and never invents a rationale that wasn't given.\n\n`rationale` is filled ONLY if the message explicitly states a reason — otherwise null. No duplicate-check step here, unlike Idea.",
+        "height": 180,
+        "width": 1800,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        12000,
+        -1952
+      ],
+      "id": "e556626b-7f97-4473-b770-74a2ac3a9b00",
+      "name": "Sticky - Decision Branch Explanation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "4a2b3c4d-0004-4000-8000-000000000003",
+              "leftValue": "={{ $json.content_text }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        11744,
+        -1728
+      ],
+      "id": "1ee2736f-fbea-4d56-a81b-9f2cdc39231b",
+      "name": "Validate Decision Content"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const content = $json.content_text;\nconst instructions = `You are extracting a DECISION raised in a Telegram discussion for a training program's manager dashboard. A Decision is a choice that has already been made or agreed on, even if stated briefly. Your ONLY job is to record what was decided - you do not evaluate whether it was a good decision, you do not suggest alternatives, and you do not add a rationale that was not stated.\n\nRead the submitted message and produce:\n- title: a short, specific title (under 8 words)\n- summary: one to two sentences describing what was decided, stated factually\n- rationale: the reason given for the decision, ONLY if the message explicitly states one. If no reason is given, use null. Never invent one.\n- tags: short lowercase topical labels\n- keywords: key terms useful for future search\n\nJudge whether the submitted text contains enough context to preserve a useful standalone Decision.\n- needs_clarification: true ONLY when what was actually decided is too ambiguous to understand later without guessing.\n- clarifying_question: if needs_clarification is true, ask ONE short, specific follow-up question. Otherwise use null.\nDo NOT mark an item incomplete merely because no rationale was stated.\n\nNever add information not present in the message. Respond with JSON only, matching the given schema exactly.\n\nLANGUAGE POLICY:\n- Generate all user-facing and knowledge text in the same primary language as the user's submitted content.\n- If the input is primarily Arabic, write the title, summary, tags, keywords, and clarifying_question in Arabic.\n- If the input is primarily English, write them in English.\n- For mixed-language input, follow the dominant natural language of the message.\n- Preserve technical terms, product names, acronyms, and commonly used English technical vocabulary when translating them would sound unnatural or reduce precision (for example: GitHub, Telegram, API, commit, Supabase, n8n).\n- Do not switch the entire output to English merely because the input contains English technical terms.\n- Do not translate the user's content into another language unless explicitly requested.`;\nreturn { json: { ...$json, ai_prompt: `${instructions}\n\nSubmitted decision:\n${content}` } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12000,
+        -1728
+      ],
+      "id": "322795b0-9d7d-495d-a8f3-2ca7dc7f6bd3",
+      "name": "Prepare Decision Prompt"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-goog-api-key",
+              "value": "REPLACE_WITH_GEMINI_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $json.ai_prompt }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'object', properties: { title: { type: 'string' }, summary: { type: 'string' }, rationale: { type: 'string', nullable: true }, tags: { type: 'array', items: { type: 'string' } }, keywords: { type: 'array', items: { type: 'string' } }, needs_clarification: { type: 'boolean' }, clarifying_question: { type: 'string', nullable: true } }, required: ['title', 'summary', 'tags', 'keywords', 'needs_clarification'] } } }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        12304,
+        -1728
+      ],
+      "id": "a924d2fb-c688-4af3-9c93-a842d07e7892",
+      "name": "Call Gemini - Decision",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "qR2VlPng3vVhu6dU",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $json.candidates?.[0]?.content?.parts?.[0]?.text;\nlet parsed;\ntry {\n  parsed = JSON.parse(raw);\n} catch (e) {\n  return { json: { status: 'error', title: '', summary: 'Could not parse the AI response - please try again.', rationale: null, tags: [], keywords: [], needs_clarification: false, clarifying_question: null } };\n}\n\nconst structurallyValid =\n  parsed &&\n  typeof parsed.title === 'string' &&\n  typeof parsed.summary === 'string' &&\n  Array.isArray(parsed.tags) &&\n  Array.isArray(parsed.keywords) &&\n  typeof parsed.needs_clarification === 'boolean';\n\nif (!structurallyValid) {\n  return { json: { status: 'error', title: '', summary: 'AI response was missing required fields - please try again.', rationale: null, tags: [], keywords: [], needs_clarification: false, clarifying_question: null } };\n}\n\nreturn {\n  json: {\n    status: 'ok',\n    title: parsed.title,\n    summary: parsed.summary, rationale: parsed.rationale ?? null,\n    tags: parsed.tags,\n    keywords: parsed.keywords,\n    needs_clarification: parsed.needs_clarification,\n    clarifying_question: parsed.clarifying_question ?? null\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12608,
+        -1728
+      ],
+      "id": "19bc919a-df37-45da-8f2f-1bb523ffaab6",
+      "name": "Validate Decision Output"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "⚠️ Please include the decision after the /decision command.\nExample: /decision We're using Supabase instead of Firebase for the database",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        12000,
+        -1504
+      ],
+      "id": "908a439c-648b-49e0-a31e-0835bd1e5907",
+      "name": "Reply - Missing Decision Text",
+      "webhookId": "a03abba4-d8ec-4254-8512-309ab3ac96a7",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "**ACTION ITEM — type-specific schema: title, summary, owner, due, tags, keywords**\nAn Action Item is a task someone needs to do, self- or other-assigned. `owner` and `due` are filled ONLY if explicitly stated — never assumed.\n\n`due` is captured as the submitter's own phrasing (e.g. \"Thursday\", \"before the demo\") and is deliberately NOT resolved to a calendar date — the model has no reliable \"today\" reference, and normalizing it would manufacture false precision. Resolve it downstream (dashboard/backend) where you control the reference date, not here.",
+        "height": 180,
+        "width": 1800,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        12000,
+        -1280
+      ],
+      "id": "c4578374-f533-408d-95f7-fdc97a233f12",
+      "name": "Sticky - Action Branch Explanation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "4a2b3c4d-0004-4000-8000-000000000004",
+              "leftValue": "={{ $json.content_text }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        11744,
+        -1072
+      ],
+      "id": "5d4494fd-9277-4a6f-8d09-e0c2772d5203",
+      "name": "Validate Action Content"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const content = $json.content_text;\nconst instructions = `You are extracting an ACTION ITEM raised in a Telegram discussion for a training program's manager dashboard. An Action Item is a task someone needs to do, whether self-assigned or assigned to someone else. Preserve the task exactly as stated.\n\nRead the submitted message and produce:\n- title: a short, specific title (under 8 words)\n- summary: one to two sentences describing the task itself\n- owner: who is responsible, ONLY if explicitly stated (including \"I\"/self-assigned - restate as the submitter). If no owner is stated, use null. Never assume or guess an owner.\n- due: any deadline or timing mentioned, copied close to how it was stated (e.g. \"Thursday\", \"before the demo\"). Do NOT resolve it to a calendar date or add precision that was not given. If nothing was said, use null.\n- tags: short lowercase topical labels\n- keywords: key terms useful for future search\n\nJudge whether the submitted text contains enough context to preserve a useful standalone Action Item.\n- needs_clarification: true ONLY when the actual task is too ambiguous to understand later without guessing.\n- clarifying_question: if needs_clarification is true, ask ONE short, specific follow-up question. Otherwise use null.\nDo NOT mark an item incomplete merely because owner or due is missing; both are optional unless the task itself depends on an unclear referent.\n\nNever add information not present in the message. Respond with JSON only, matching the given schema exactly.\n\nLANGUAGE POLICY:\n- Generate all user-facing and knowledge text in the same primary language as the user's submitted content.\n- If the input is primarily Arabic, write the title, summary, tags, keywords, and clarifying_question in Arabic.\n- If the input is primarily English, write them in English.\n- For mixed-language input, follow the dominant natural language of the message.\n- Preserve technical terms, product names, acronyms, and commonly used English technical vocabulary when translating them would sound unnatural or reduce precision (for example: GitHub, Telegram, API, commit, Supabase, n8n).\n- Do not switch the entire output to English merely because the input contains English technical terms.\n- Do not translate the user's content into another language unless explicitly requested.`;\nreturn { json: { ...$json, ai_prompt: `${instructions}\n\nSubmitted action item:\n${content}` } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12000,
+        -1072
+      ],
+      "id": "ea95b5de-081a-48e5-82f5-d87843003063",
+      "name": "Prepare Action Prompt"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-goog-api-key",
+              "value": "REPLACE_WITH_GEMINI_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $json.ai_prompt }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'object', properties: { title: { type: 'string' }, summary: { type: 'string' }, owner: { type: 'string', nullable: true }, due: { type: 'string', nullable: true }, tags: { type: 'array', items: { type: 'string' } }, keywords: { type: 'array', items: { type: 'string' } }, needs_clarification: { type: 'boolean' }, clarifying_question: { type: 'string', nullable: true } }, required: ['title', 'summary', 'tags', 'keywords', 'needs_clarification'] } } }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        12304,
+        -1072
+      ],
+      "id": "540fd7f8-f47f-4c34-91d5-011addf5f0e8",
+      "name": "Call Gemini - Action",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "qR2VlPng3vVhu6dU",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $json.candidates?.[0]?.content?.parts?.[0]?.text;\nlet parsed;\ntry {\n  parsed = JSON.parse(raw);\n} catch (e) {\n  return { json: { status: 'error', title: '', summary: 'Could not parse the AI response - please try again.', owner: null, due: null, tags: [], keywords: [], needs_clarification: false, clarifying_question: null } };\n}\n\nconst structurallyValid =\n  parsed &&\n  typeof parsed.title === 'string' &&\n  typeof parsed.summary === 'string' &&\n  Array.isArray(parsed.tags) &&\n  Array.isArray(parsed.keywords) &&\n  typeof parsed.needs_clarification === 'boolean';\n\nif (!structurallyValid) {\n  return { json: { status: 'error', title: '', summary: 'AI response was missing required fields - please try again.', owner: null, due: null, tags: [], keywords: [], needs_clarification: false, clarifying_question: null } };\n}\n\nreturn {\n  json: {\n    status: 'ok',\n    title: parsed.title,\n    summary: parsed.summary, owner: parsed.owner ?? null, due: parsed.due ?? null,\n    tags: parsed.tags,\n    keywords: parsed.keywords,\n    needs_clarification: parsed.needs_clarification,\n    clarifying_question: parsed.clarifying_question ?? null\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12608,
+        -1072
+      ],
+      "id": "26775d61-bc71-4e9c-99d4-6f5fddba9678",
+      "name": "Validate Action Output"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "⚠️ Please include the task after the /action command.\nExample: /action Prepare the demo slides before Thursday's review",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        12000,
+        -832
+      ],
+      "id": "474182be-b3c8-44f3-b81a-9e4b57d9faba",
+      "name": "Reply - Missing Action Text",
+      "webhookId": "622f919d-a52e-43b6-9e42-ec428447f8e5",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "**OBSERVATION — deliberately the same schema as title/summary/tags/keywords, no extra fields**\nAn Observation is a factual note about what's happening that doesn't fit the other five categories. Unlike Suggestion/Decision/Action, it gets no extra structured field — adding one (e.g. a \"recommendation\") would nudge the model toward interpreting or proposing a fix, which is exactly what this category is NOT. The prompt explicitly forbids turning an observation into a suggestion.",
+        "height": 180,
+        "width": 1800,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        12000,
+        -592
+      ],
+      "id": "0270b5eb-c1e5-41e3-a2c6-5cc934021420",
+      "name": "Sticky - Observation Branch Explanation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "4a2b3c4d-0004-4000-8000-000000000005",
+              "leftValue": "={{ $json.content_text }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        11792,
+        -368
+      ],
+      "id": "02432e19-c28e-4e7a-8643-286ba027952d",
+      "name": "Validate Observation Content"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const content = $json.content_text;\nconst instructions = `You are extracting an OBSERVATION raised in a Telegram discussion for a training program's manager dashboard. An Observation is a factual note about what's happening that does not fit Idea, Suggestion, Decision, Action Item, or Question. Your job is to restate the fact clearly - not to propose a fix, not to suggest a change, and not to add interpretation.\n\nRead the submitted message and produce:\n- title: a short, specific title (under 8 words)\n- summary: one to two sentences, strictly factual - describe what is happening, not what should be done about it\n- tags: short lowercase topical labels\n- keywords: key terms useful for future search\n\nIf the message actually proposes a change or fix, that is a Suggestion, not an Observation - still summarize only what was stated, do not add a recommendation of your own. Judge whether the submitted text contains enough context to preserve a useful standalone Observation.\n- needs_clarification: true ONLY when what was observed is too ambiguous to understand later without guessing.\n- clarifying_question: if needs_clarification is true, ask ONE short, specific follow-up question. Otherwise use null.\nDo not infer causes, recommendations, or fixes.\n\nNever add information not present in the message. Respond with JSON only, matching the given schema exactly.\n\nLANGUAGE POLICY:\n- Generate all user-facing and knowledge text in the same primary language as the user's submitted content.\n- If the input is primarily Arabic, write the title, summary, tags, keywords, and clarifying_question in Arabic.\n- If the input is primarily English, write them in English.\n- For mixed-language input, follow the dominant natural language of the message.\n- Preserve technical terms, product names, acronyms, and commonly used English technical vocabulary when translating them would sound unnatural or reduce precision (for example: GitHub, Telegram, API, commit, Supabase, n8n).\n- Do not switch the entire output to English merely because the input contains English technical terms.\n- Do not translate the user's content into another language unless explicitly requested.`;\nreturn { json: { ...$json, ai_prompt: `${instructions}\n\nSubmitted observation:\n${content}` } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12000,
+        -384
+      ],
+      "id": "16f117ff-5b1c-4652-a98e-86a9dfc0957a",
+      "name": "Prepare Observation Prompt"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-goog-api-key",
+              "value": "REPLACE_WITH_GEMINI_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: $json.ai_prompt }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: { type: 'object', properties: { title: { type: 'string' }, summary: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } }, keywords: { type: 'array', items: { type: 'string' } }, needs_clarification: { type: 'boolean' }, clarifying_question: { type: 'string', nullable: true } }, required: ['title', 'summary', 'tags', 'keywords', 'needs_clarification'] } } }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        12304,
+        -384
+      ],
+      "id": "196b8bb9-8447-4ae0-b6d2-1983c1f1cdd3",
+      "name": "Call Gemini - Observation",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "qR2VlPng3vVhu6dU",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $json.candidates?.[0]?.content?.parts?.[0]?.text;\nlet parsed;\ntry {\n  parsed = JSON.parse(raw);\n} catch (e) {\n  return { json: { status: 'error', title: '', summary: 'Could not parse the AI response - please try again.', tags: [], keywords: [], needs_clarification: false, clarifying_question: null } };\n}\n\nconst structurallyValid =\n  parsed &&\n  typeof parsed.title === 'string' &&\n  typeof parsed.summary === 'string' &&\n  Array.isArray(parsed.tags) &&\n  Array.isArray(parsed.keywords) &&\n  typeof parsed.needs_clarification === 'boolean';\n\nif (!structurallyValid) {\n  return { json: { status: 'error', title: '', summary: 'AI response was missing required fields - please try again.', tags: [], keywords: [], needs_clarification: false, clarifying_question: null } };\n}\n\nreturn {\n  json: {\n    status: 'ok',\n    title: parsed.title,\n    summary: parsed.summary,\n    tags: parsed.tags,\n    keywords: parsed.keywords,\n    needs_clarification: parsed.needs_clarification,\n    clarifying_question: parsed.clarifying_question ?? null\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12608,
+        -384
+      ],
+      "id": "84cad30a-e7a4-4a83-92a5-7382429a182d",
+      "name": "Validate Observation Output"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "⚠️ Please include what you observed after the /observation command.\nExample: /observation Several students mentioned confusion about the submission process this week",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        12000,
+        -160
+      ],
+      "id": "d45f210b-a9b6-4468-800c-d38af2badba4",
+      "name": "Reply - Missing Observation Text",
+      "webhookId": "9730b578-a0d1-4a4a-8dcd-33f167e06faa",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Command').item.json.chat_id }}",
+        "text": "👋 Welcome to CollaInsight!\n\nCapture structured knowledge from your team's Telegram discussions using explicit commands.\n\nUse /help to see the available knowledge types and examples.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        11744,
+        240
+      ],
+      "id": "7a3a5ac6-746c-4fa4-82b2-954db5c990ca",
+      "name": "Reply - Start",
+      "webhookId": "57d8e565-6aea-4aeb-9b97-aba45c5c8b86",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Command').item.json.chat_id }}",
+        "text": "📚 CollaInsight Commands\n\n💡 /idea — Record a new idea or concept\n❓ /question — Record something that needs an answer\n💭 /suggestion — Propose an improvement to something existing\n🧭 /decision — Record a choice that has been made\n📋 /action — Record a task that needs to be done\n👁️ /observation — Record a factual observation\n\nExamples:\n/question Will the deadline move?\n/action Prepare the demo slides before Thursday\n\nThe command is the classification — CollaInsight does not guess the type for you.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        11744,
+        80
+      ],
+      "id": "8c6299a8-07e8-48d8-b1e7-14bff234afe2",
+      "name": "Reply - Help",
+      "webhookId": "54e6a369-3d5f-42e2-8d06-0f9cf3185e04",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "635cf78c-39ab-4cf8-bbd5-c92f60237110",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "ok",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "3d9b090a-7d4e-47bd-833a-be14b4687ed8",
+              "leftValue": "={{ $json.needs_clarification }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        12896,
+        -3120
+      ],
+      "id": "4c58e11c-d346-49db-847b-46cb7adc0a67",
+      "name": "Ready to Save Question?"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const v = $json;\nlet text;\nif (v.status !== 'ok') {\n  text = `⚠️ ${v.summary || 'The AI response could not be validated. Please try again.'}`;\n} else {\n  text = `❓ I need one detail before saving this item:\\n${v.clarifying_question || 'Please add enough context so this can be understood later without guessing.'}`;\n}\nreturn { json: { reply_text: text } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        13152,
+        -2928
+      ],
+      "id": "4998a045-634f-4332-a8ec-6ac4c6f17120",
+      "name": "Format Question Clarification/Error"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Command').item.json.chat_id }}",
+        "text": "={{ $json.reply_text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        13440,
+        -2928
+      ],
+      "id": "80ac85d0-afd8-4114-af75-9d553310080b",
+      "name": "Reply - Question Needs Clarification",
+      "webhookId": "7096a3a1-3785-4c3c-ab81-36209a623fc0",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "4faf1d7f-6379-472f-baf8-8a3e14e978ac",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "ok",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "2c234a87-5f23-4a85-8184-77fee6c6a94d",
+              "leftValue": "={{ $json.needs_clarification }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        12864,
+        -2416
+      ],
+      "id": "2f4de2e3-829a-4159-a54c-af82b3a21932",
+      "name": "Ready to Save Suggestion?"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const v = $json;\nlet text;\nif (v.status !== 'ok') {\n  text = `⚠️ ${v.summary || 'The AI response could not be validated. Please try again.'}`;\n} else {\n  text = `❓ I need one detail before saving this item:\\n${v.clarifying_question || 'Please add enough context so this can be understood later without guessing.'}`;\n}\nreturn { json: { reply_text: text } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        13120,
+        -2240
+      ],
+      "id": "5c9e3d10-d217-47cc-95dc-d9388de1e615",
+      "name": "Format Suggestion Clarification/Error"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Command').item.json.chat_id }}",
+        "text": "={{ $json.reply_text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        13408,
+        -2240
+      ],
+      "id": "769094d8-dad2-40c5-ac30-12e9a14d91e0",
+      "name": "Reply - Suggestion Needs Clarification",
+      "webhookId": "622ef9d7-32ab-4a8d-a6a3-5f9c32b68efa",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0c5cb856-edf5-4808-96c0-7c5eebdb4a70",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "ok",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "81096a0f-ef35-44f7-9228-3a00443e2154",
+              "leftValue": "={{ $json.needs_clarification }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        12864,
+        -1728
+      ],
+      "id": "af9263c2-0370-42c5-b389-41e4ef55a08c",
+      "name": "Ready to Save Decision?"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const v = $json;\nlet text;\nif (v.status !== 'ok') {\n  text = `⚠️ ${v.summary || 'The AI response could not be validated. Please try again.'}`;\n} else {\n  text = `❓ I need one detail before saving this item:\\n${v.clarifying_question || 'Please add enough context so this can be understood later without guessing.'}`;\n}\nreturn { json: { reply_text: text } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        13120,
+        -1552
+      ],
+      "id": "1d5c3b8f-9fd9-40b2-b8f0-db5c0cba1de3",
+      "name": "Format Decision Clarification/Error"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Command').item.json.chat_id }}",
+        "text": "={{ $json.reply_text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        13408,
+        -1552
+      ],
+      "id": "b5e46bd9-166e-4f72-961e-a46ba2308303",
+      "name": "Reply - Decision Needs Clarification",
+      "webhookId": "652a0b8a-940d-45df-997d-c577c140a882",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "fe0f1f10-d437-4432-96e1-61467449c7dd",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "ok",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "30a2ae15-0fc9-46e8-adec-56677d8652d3",
+              "leftValue": "={{ $json.needs_clarification }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        12864,
+        -1072
+      ],
+      "id": "caba44b6-2db2-4fad-a57b-0d6c9bc27bb1",
+      "name": "Ready to Save Action?"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const v = $json;\nlet text;\nif (v.status !== 'ok') {\n  text = `⚠️ ${v.summary || 'The AI response could not be validated. Please try again.'}`;\n} else {\n  text = `❓ I need one detail before saving this item:\\n${v.clarifying_question || 'Please add enough context so this can be understood later without guessing.'}`;\n}\nreturn { json: { reply_text: text } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        13120,
+        -880
+      ],
+      "id": "f29c937e-f9c2-49f4-9c82-c6072fa68a58",
+      "name": "Format Action Clarification/Error"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Command').item.json.chat_id }}",
+        "text": "={{ $json.reply_text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        13408,
+        -880
+      ],
+      "id": "e8116b41-29a5-436d-b82f-45f6d20c05aa",
+      "name": "Reply - Action Needs Clarification",
+      "webhookId": "14ec0f71-c5ff-4b63-b45d-c26f014ff0bd",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "1a65685a-77e1-4418-bc2b-8f0ef84522c5",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "ok",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "29b173aa-a77b-4825-9c8d-ccbb81d1ba76",
+              "leftValue": "={{ $json.needs_clarification }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        12864,
+        -384
+      ],
+      "id": "32d87511-c6db-42b5-9bbe-639ad65bac76",
+      "name": "Ready to Save Observation?"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const v = $json;\nlet text;\nif (v.status !== 'ok') {\n  text = `⚠️ ${v.summary || 'The AI response could not be validated. Please try again.'}`;\n} else {\n  text = `❓ I need one detail before saving this item:\\n${v.clarifying_question || 'Please add enough context so this can be understood later without guessing.'}`;\n}\nreturn { json: { reply_text: text } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        13120,
+        -192
+      ],
+      "id": "5e0383e4-a677-485d-8dcc-14a53d84b1ee",
+      "name": "Format Observation Clarification/Error"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Command').item.json.chat_id }}",
+        "text": "={{ $json.reply_text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        13408,
+        -192
+      ],
+      "id": "f93ceb9c-d642-4b28-8538-5efca38ede0d",
+      "name": "Reply - Observation Needs Clarification",
+      "webhookId": "13c9664b-2d20-454b-8821-0fb0c05c7cc2",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "bf13a0f7-f35e-4359-82e1-faf7d522883c",
+              "leftValue": "={{ !!$json.callback_query }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        15376,
+        -1472
+      ],
+      "id": "78b8aa7c-577e-4da3-83ed-bb4ab4f3967e",
+      "name": "Is Callback Query?"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const p = $('Parse Command').item.json;\nconst v = $('Validate Question Output').item.json;\nreturn {json:{\n  knowledge_type:'question',\n  telegram_user_id:String(p.telegram_user_id ?? ''),\n  payload:{\n    question_text:p.content_text,\n    title:v.title,\n    summary:v.summary,\n    is_blocking:v.is_blocking,\n    addressed_to:v.addressed_to,\n    tags:v.tags,\n    keywords:v.keywords,\n    telegram_display_name:p.telegram_display_name,\n    telegram_chat_id:String(p.chat_id),\n    telegram_chat_title:p.chat_title,\n    telegram_message_id:p.message_id != null ? String(p.message_id) : null\n  }\n}};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        13440,
+        -3120
+      ],
+      "id": "3e2088d5-afc7-4c2c-99cf-ddfc18c2cfad",
+      "name": "Pending - Question"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const p = $('Parse Command').item.json;\nconst v = $('Validate Suggestion Output').item.json;\nreturn {json:{\n  knowledge_type:'suggestion',\n  telegram_user_id:String(p.telegram_user_id ?? ''),\n  payload:{\n    suggestion_text:p.content_text,\n    title:v.title,\n    summary:v.summary,\n    target:v.target,\n    tags:v.tags,\n    keywords:v.keywords,\n    telegram_display_name:p.telegram_display_name,\n    telegram_chat_id:String(p.chat_id),\n    telegram_chat_title:p.chat_title,\n    telegram_message_id:p.message_id != null ? String(p.message_id) : null\n  }\n}};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        13408,
+        -2432
+      ],
+      "id": "48fadf43-54e0-447b-8921-279af3f495f1",
+      "name": "Pending - Suggestion"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const p = $('Parse Command').item.json;\nconst v = $('Validate Decision Output').item.json;\nreturn {json:{\n  knowledge_type:'decision',\n  telegram_user_id:String(p.telegram_user_id ?? ''),\n  payload:{\n    decision_text:p.content_text,\n    title:v.title,\n    summary:v.summary,\n    rationale:v.rationale,\n    tags:v.tags,\n    keywords:v.keywords,\n    telegram_display_name:p.telegram_display_name,\n    telegram_chat_id:String(p.chat_id),\n    telegram_chat_title:p.chat_title,\n    telegram_message_id:p.message_id != null ? String(p.message_id) : null\n  }\n}};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        13408,
+        -1728
+      ],
+      "id": "33d82fcc-b47d-4319-9830-4652ec65b91f",
+      "name": "Pending - Decision"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const p = $('Parse Command').item.json;\nconst v = $('Validate Action Output').item.json;\nreturn {json:{\n  knowledge_type:'action',\n  telegram_user_id:String(p.telegram_user_id ?? ''),\n  payload:{\n    action_text:p.content_text,\n    title:v.title,\n    summary:v.summary,\n    owner:v.owner,\n    due:v.due,\n    tags:v.tags,\n    keywords:v.keywords,\n    telegram_display_name:p.telegram_display_name,\n    telegram_chat_id:String(p.chat_id),\n    telegram_chat_title:p.chat_title,\n    telegram_message_id:p.message_id != null ? String(p.message_id) : null\n  }\n}};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        13408,
+        -1056
+      ],
+      "id": "84ce179d-1459-458e-ab36-2cb159d79393",
+      "name": "Pending - Action"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const p = $('Parse Command').item.json;\nconst v = $('Validate Observation Output').item.json;\nreturn {json:{\n  knowledge_type:'observation',\n  telegram_user_id:String(p.telegram_user_id ?? ''),\n  payload:{\n    observation_text:p.content_text,\n    title:v.title,\n    summary:v.summary,\n\n    tags:v.tags,\n    keywords:v.keywords,\n    telegram_display_name:p.telegram_display_name,\n    telegram_chat_id:String(p.chat_id),\n    telegram_chat_title:p.chat_title,\n    telegram_message_id:p.message_id != null ? String(p.message_id) : null\n  }\n}};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        13408,
+        -368
+      ],
+      "id": "b246e42c-cd03-409c-8432-d2e09f5ff1f0",
+      "name": "Pending - Observation"
+    },
+    {
+      "parameters": {
+        "tableId": "pending_knowledge",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "knowledge_type",
+              "fieldValue": "={{ $json.knowledge_type }}"
+            },
+            {
+              "fieldId": "telegram_user_id",
+              "fieldValue": "={{ $json.telegram_user_id }}"
+            },
+            {
+              "fieldId": "telegram_chat_id",
+              "fieldValue": "={{ $json.payload.telegram_chat_id }}"
+            },
+            {
+              "fieldId": "telegram_message_id",
+              "fieldValue": "={{ $json.payload.telegram_message_id }}"
+            },
+            {
+              "fieldId": "payload",
+              "fieldValue": "={{ $json.payload }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        14880,
+        -1696
+      ],
+      "id": "0f7d5874-f01c-4bf1-8a6b-fc348609be6a",
+      "name": "Create Pending Knowledge",
+      "credentials": {
+        "supabaseApi": {
+          "id": "BczNtaf6tmogVxuq",
+          "name": "CollaInsight-demo"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const row=$json; const p=row.payload||{};\nconst isArabic=/[\\u0600-\\u06FF]/.test(`${p.title||''} ${p.summary||''}`);\nconst preview_text=isArabic\n? `📝 راجع قبل الحفظ\\n\\n📌 ${p.title}\\n${p.summary}\\n\\nهل تريد حفظ هذه المعرفة؟`\n: `📝 Review before saving\\n\\n📌 ${p.title}\\n${p.summary}\\n\\nDo you want to save this knowledge?`;\nreturn {json:{...row,preview_text}};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        15120,
+        -1696
+      ],
+      "id": "f1414e22-131a-413e-972b-d2bf200a4990",
+      "name": "Format Confirmation Preview"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.telegram_user_id }}",
+        "text": "={{ $json.preview_text }}",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "✅ Save / حفظ",
+                    "additionalFields": {
+                      "callback_data": "={{ 'save:' + $json.id }}"
+                    }
+                  },
+                  {
+                    "text": "❌ Cancel / إلغاء",
+                    "additionalFields": {
+                      "callback_data": "={{ 'cancel:' + $json.id }}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        15376,
+        -1696
+      ],
+      "id": "3d0f35ec-5bb6-4295-9882-7e4d4cbe56aa",
+      "name": "Send Confirmation Preview",
+      "webhookId": "438108d8-5a9d-4914-97c7-8c80192ce44c",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Format Confirmation Preview').item.json.payload.telegram_chat_id }}",
+        "text": "✅ Check your DMs to confirm.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        15712,
+        -1968
+      ],
+      "id": "a673e70a-7493-4997-9d52-29533fa0b34b",
+      "name": "Reply - Check DMs",
+      "webhookId": "860ea2b5-4d67-40df-a140-7208cc5f58fc",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Format Confirmation Preview').item.json.payload.telegram_chat_id }}",
+        "text": "=⚠️ I couldn't send you a private confirmation - please start a chat with me first, then resubmit your command.\n\n👉 https://t.me/YOUR_BOT_USERNAME_HERE",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        15664,
+        -1680
+      ],
+      "id": "f17e112b-15ee-471a-8140-5b9a5a66b0db",
+      "name": "Reply - DM Unavailable",
+      "webhookId": "0a5f687c-46bc-4e03-9aaf-c39a5d315371",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const q=$json.callback_query;\nconst m=String(q?.data||'').match(/^(save|cancel):(\\d+)$/);\nreturn {json:{\n  valid:!!m,\n  action:m?.[1]??null,\n  pending_id:m?Number(m[2]):null,\n  callback_query_id:q?.id??null,\n  callback_user_id:q?.from?.id!=null?String(q.from.id):null,\n  chat_id:q?.message?.chat?.id??null,\n  message_id:q?.message?.message_id??null\n}};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        15904,
+        -1488
+      ],
+      "id": "0eb352a3-cb42-4212-94e7-b27fb1ee828d",
+      "name": "Parse Confirmation Callback"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "pending_knowledge",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $('Parse Confirmation Callback').item.json.pending_id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        16640,
+        -1520
+      ],
+      "id": "ecb2f050-e9a5-435d-86ae-2aaa8624c7d8",
+      "name": "Get Pending Knowledge",
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "BczNtaf6tmogVxuq",
+          "name": "CollaInsight-demo"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6c34ba63-4689-4094-ab3f-f1c42514c377",
+              "leftValue": "={{ String($json.telegram_user_id) }}",
+              "rightValue": "={{ $('Parse Confirmation Callback').item.json.callback_user_id }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        16992,
+        -1872
+      ],
+      "id": "a332e33e-6681-4023-b2de-973b9ae0c380",
+      "name": "Same User?"
+    },
+    {
+      "parameters": {
+        "resource": "callback",
+        "queryId": "={{ $('Parse Confirmation Callback').item.json.callback_query_id }}",
+        "additionalFields": {
+          "show_alert": true,
+          "text": "Only the original submitter can confirm this item."
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        17296,
+        -1728
+      ],
+      "id": "26b7275d-f428-4b4a-9b6a-fdcf9089aaca",
+      "name": "Reject Other User",
+      "webhookId": "89c13092-0cc8-498d-8f0e-f1f25e828e7b",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "callback",
+        "queryId": "={{ $('Parse Confirmation Callback').item.json.callback_query_id }}",
+        "additionalFields": {
+          "show_alert": false,
+          "text": "Processing…"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        17216,
+        -1952
+      ],
+      "id": "979591aa-5b13-4a11-b036-93f42900b5ba",
+      "name": "Acknowledge Confirmation",
+      "webhookId": "7a85f976-92af-48e1-9070-5b13fa084d39",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "4ac79ecc-17e8-432f-b1c1-f0442046f412",
+                    "leftValue": "={{ $('Parse Confirmation Callback').item.json.action }}",
+                    "rightValue": "save",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "save"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "7c3a5522-4fdb-4a25-a948-8614a10399c7",
+                    "leftValue": "={{ $('Parse Confirmation Callback').item.json.action }}",
+                    "rightValue": "cancel",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "cancel"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "none"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        17376,
+        -1952
+      ],
+      "id": "99a59574-de0e-4192-af13-a4c35fff1d46",
+      "name": "Save or Cancel"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "0228728c-2180-4193-babe-e408223af1e2",
+                    "leftValue": "={{ $('Get Pending Knowledge').item.json.knowledge_type }}",
+                    "rightValue": "question",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "question"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "b36daa36-90c7-4f37-9385-41dbb56091ea",
+                    "leftValue": "={{ $('Get Pending Knowledge').item.json.knowledge_type }}",
+                    "rightValue": "suggestion",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "suggestion"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "38c0aba4-3964-466f-a8f3-b66258cee5b2",
+                    "leftValue": "={{ $('Get Pending Knowledge').item.json.knowledge_type }}",
+                    "rightValue": "decision",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "decision"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "4f3d4198-8bec-42d1-844d-9e46e676a856",
+                    "leftValue": "={{ $('Get Pending Knowledge').item.json.knowledge_type }}",
+                    "rightValue": "action",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "action"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "2ea2ba56-304f-4e60-a527-acb913681dc8",
+                    "leftValue": "={{ $('Get Pending Knowledge').item.json.knowledge_type }}",
+                    "rightValue": "observation",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "observation"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "none"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        17584,
+        -2176
+      ],
+      "id": "94273219-08b5-45f6-a36c-d336a0f12049",
+      "name": "Pending Type Router"
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "tableId": "pending_knowledge",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Parse Confirmation Callback').item.json.pending_id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        17632,
+        -1600
+      ],
+      "id": "ac97658e-fafa-438a-81d6-b3a037341543",
+      "name": "Delete Pending - Cancel",
+      "credentials": {
+        "supabaseApi": {
+          "id": "BczNtaf6tmogVxuq",
+          "name": "CollaInsight-demo"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "editMessageText",
+        "chatId": "={{ $('Parse Confirmation Callback').item.json.chat_id }}",
+        "messageId": "={{ $('Parse Confirmation Callback').item.json.message_id }}",
+        "text": "={{ /[\\u0600-\\u06FF]/.test($('Get Pending Knowledge').item.json.payload.title || '') ? '❌ تم الإلغاء' : '❌ Cancelled' }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        17872,
+        -1600
+      ],
+      "id": "d1886d6f-e8ce-413c-8b52-6c5804ccf335",
+      "name": "Edit Preview - Cancelled",
+      "webhookId": "91ccaa5d-ace1-428b-8234-07203f952cc0",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "poc_questions",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "question_text",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.question_text }}"
+            },
+            {
+              "fieldId": "title",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.title }}"
+            },
+            {
+              "fieldId": "summary",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.summary }}"
+            },
+            {
+              "fieldId": "is_blocking",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.is_blocking }}"
+            },
+            {
+              "fieldId": "addressed_to",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.addressed_to }}"
+            },
+            {
+              "fieldId": "tags",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.tags }}"
+            },
+            {
+              "fieldId": "keywords",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.keywords }}"
+            },
+            {
+              "fieldId": "telegram_display_name",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.telegram_display_name }}"
+            },
+            {
+              "fieldId": "telegram_chat_id",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.telegram_chat_id }}"
+            },
+            {
+              "fieldId": "telegram_chat_title",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.telegram_chat_title }}"
+            },
+            {
+              "fieldId": "telegram_message_id",
+              "fieldValue": "="
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        17888,
+        -2416
+      ],
+      "id": "9e4eb4ea-c7b2-4cf6-b62c-77af8c51066b",
+      "name": "Insert Question to Supabase",
+      "credentials": {
+        "supabaseApi": {
+          "id": "BczNtaf6tmogVxuq",
+          "name": "CollaInsight-demo"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "poc_suggestions",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "suggestion_text",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.suggestion_text }}"
+            },
+            {
+              "fieldId": "title",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.title }}"
+            },
+            {
+              "fieldId": "summary",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.summary }}"
+            },
+            {
+              "fieldId": "target",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.target }}"
+            },
+            {
+              "fieldId": "tags",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.tags }}"
+            },
+            {
+              "fieldId": "keywords",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.keywords }}"
+            },
+            {
+              "fieldId": "telegram_display_name",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.telegram_display_name }}"
+            },
+            {
+              "fieldId": "telegram_chat_id",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.telegram_chat_id }}"
+            },
+            {
+              "fieldId": "telegram_chat_title",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.telegram_chat_title }}"
+            },
+            {
+              "fieldId": "telegram_message_id",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.telegram_message_id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        17888,
+        -2256
+      ],
+      "id": "9d392ff8-a7c4-44fb-b171-9333af72a298",
+      "name": "Insert Suggestion to Supabase",
+      "credentials": {
+        "supabaseApi": {
+          "id": "BczNtaf6tmogVxuq",
+          "name": "CollaInsight-demo"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "poc_decisions",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "decision_text",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.decision_text }}"
+            },
+            {
+              "fieldId": "title",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.title }}"
+            },
+            {
+              "fieldId": "summary",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.summary }}"
+            },
+            {
+              "fieldId": "rationale",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.rationale }}"
+            },
+            {
+              "fieldId": "tags",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.tags }}"
+            },
+            {
+              "fieldId": "keywords",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.keywords }}"
+            },
+            {
+              "fieldId": "telegram_display_name",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.telegram_display_name }}"
+            },
+            {
+              "fieldId": "telegram_chat_id",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.telegram_chat_id }}"
+            },
+            {
+              "fieldId": "telegram_chat_title",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.telegram_chat_title }}"
+            },
+            {
+              "fieldId": "telegram_message_id",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.telegram_message_id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        17888,
+        -2096
+      ],
+      "id": "7f33a04e-7cf6-4fcb-81e6-0d8f1fac2ac2",
+      "name": "Insert Decision to Supabase",
+      "credentials": {
+        "supabaseApi": {
+          "id": "BczNtaf6tmogVxuq",
+          "name": "CollaInsight-demo"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "poc_actions",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "action_text",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.action_text }}"
+            },
+            {
+              "fieldId": "title",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.title }}"
+            },
+            {
+              "fieldId": "summary",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.summary }}"
+            },
+            {
+              "fieldId": "owner",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.owner }}"
+            },
+            {
+              "fieldId": "due",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.due }}"
+            },
+            {
+              "fieldId": "tags",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.tags }}"
+            },
+            {
+              "fieldId": "keywords",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.keywords }}"
+            },
+            {
+              "fieldId": "telegram_display_name",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.telegram_display_name }}"
+            },
+            {
+              "fieldId": "telegram_chat_id",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.telegram_chat_id }}"
+            },
+            {
+              "fieldId": "telegram_chat_title",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.telegram_chat_title }}"
+            },
+            {
+              "fieldId": "telegram_message_id",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.telegram_message_id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        17888,
+        -1936
+      ],
+      "id": "9975b2bd-34af-4d86-bdcd-c5cb6c540747",
+      "name": "Insert Action to Supabase",
+      "credentials": {
+        "supabaseApi": {
+          "id": "BczNtaf6tmogVxuq",
+          "name": "CollaInsight-demo"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "poc_observations",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "observation_text",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.observation_text }}"
+            },
+            {
+              "fieldId": "title",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.title }}"
+            },
+            {
+              "fieldId": "summary",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.summary }}"
+            },
+            {
+              "fieldId": "tags",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.tags }}"
+            },
+            {
+              "fieldId": "keywords",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.keywords }}"
+            },
+            {
+              "fieldId": "telegram_display_name",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.telegram_display_name }}"
+            },
+            {
+              "fieldId": "telegram_chat_id",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.telegram_chat_id }}"
+            },
+            {
+              "fieldId": "telegram_chat_title",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.telegram_chat_title }}"
+            },
+            {
+              "fieldId": "telegram_message_id",
+              "fieldValue": "={{ $('Get Pending Knowledge').item.json.payload.telegram_message_id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        17888,
+        -1776
+      ],
+      "id": "9aa6a53d-b133-4103-beae-864ceb0fc45f",
+      "name": "Insert Observation to Supabase",
+      "credentials": {
+        "supabaseApi": {
+          "id": "BczNtaf6tmogVxuq",
+          "name": "CollaInsight-demo"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "tableId": "pending_knowledge",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Parse Confirmation Callback').item.json.pending_id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        18208,
+        -2096
+      ],
+      "id": "7a0239b7-b121-4639-a395-efb6673b34d5",
+      "name": "Delete Pending - Saved",
+      "credentials": {
+        "supabaseApi": {
+          "id": "BczNtaf6tmogVxuq",
+          "name": "CollaInsight-demo"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "editMessageText",
+        "chatId": "={{ $('Parse Confirmation Callback').item.json.chat_id }}",
+        "messageId": "={{ $('Parse Confirmation Callback').item.json.message_id }}",
+        "text": "={{ /[\\u0600-\\u06FF]/.test($('Get Pending Knowledge').item.json.payload.title || '') ? ('✅ تم الحفظ\\n\\n📌 ' + $('Get Pending Knowledge').item.json.payload.title + '\\n' + $('Get Pending Knowledge').item.json.payload.summary) : ('✅ Saved\\n\\n📌 ' + $('Get Pending Knowledge').item.json.payload.title + '\\n' + $('Get Pending Knowledge').item.json.payload.summary) }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        18448,
+        -2096
+      ],
+      "id": "60c148c3-04c3-4c76-9b7e-58e68eb3f65f",
+      "name": "Edit Preview - Saved",
+      "webhookId": "66b52848-dda7-4d77-ab03-d214ef1997bb",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "fec5a234-efb0-40a9-8a8d-d0be123328c7",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "number",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        16864,
+        -1728
+      ],
+      "id": "ad75cbae-e9b2-4db2-8f38-92e743839ba9",
+      "name": "Pending Item Exists?"
+    },
+    {
+      "parameters": {
+        "resource": "callback",
+        "queryId": "={{ $('Parse Confirmation Callback').item.json.callback_query_id }}",
+        "additionalFields": {
+          "show_alert": true,
+          "text": "This confirmation is expired or no longer available."
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        17008,
+        -1600
+      ],
+      "id": "7cf330d0-2fcb-4864-9b16-7ea20d54d5b1",
+      "name": "Reply - Pending Missing",
+      "webhookId": "fdc6fde3-b150-4ecb-898b-e25614714068",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "242e65d8-1e1d-4694-84c5-28c8cdd6d560",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        16272,
+        -1488
+      ],
+      "id": "a8e6d005-d2c2-4f7f-9058-66a2f20ec83a",
+      "name": "Valid Confirmation Callback?"
+    },
+    {
+      "parameters": {
+        "resource": "callback",
+        "queryId": "={{ $('Parse Confirmation Callback').item.json.callback_query_id }}",
+        "additionalFields": {
+          "show_alert": true,
+          "text": "Invalid confirmation."
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        16640,
+        -1312
+      ],
+      "id": "f01eb79d-9f8e-4d24-b1df-87172996bd73",
+      "name": "Reply - Invalid Callback",
+      "webhookId": "2560c636-c0fe-4705-8779-7610235a7e43",
+      "credentials": {
+        "telegramApi": {
+          "id": "aWVkoY2MxPGJF8Ju",
+          "name": "CollaInsight Assistant Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Is Callback Query?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Command": {
+      "main": [
+        [
+          {
+            "node": "Parse Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Command": {
+      "main": [
+        [
+          {
+            "node": "Command Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Command Router": {
+      "main": [
+        [
+          {
+            "node": "Validate Idea Content",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Validate Question Content",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Validate Suggestion Content",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Validate Decision Content",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Validate Action Content",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Validate Observation Content",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply - Start",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply - Help",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unknown Command (Ignored)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Idea Content": {
+      "main": [
+        [
+          {
+            "node": "Call Idea Agent (POST /api/idea)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply - Missing Idea Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Idea Agent (POST /api/idea)": {
+      "main": [
+        [
+          {
+            "node": "Format Idea Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Idea Reply": {
+      "main": [
+        [
+          {
+            "node": "Reply - Idea Saved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Question Content": {
+      "main": [
+        [
+          {
+            "node": "Prepare Question Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply - Missing Question Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Question Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Gemini - Question",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Gemini - Question": {
+      "main": [
+        [
+          {
+            "node": "Validate Question Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Question Output": {
+      "main": [
+        [
+          {
+            "node": "Ready to Save Question?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Suggestion Content": {
+      "main": [
+        [
+          {
+            "node": "Prepare Suggestion Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply - Missing Suggestion Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Suggestion Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Gemini - Suggestion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Gemini - Suggestion": {
+      "main": [
+        [
+          {
+            "node": "Validate Suggestion Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Suggestion Output": {
+      "main": [
+        [
+          {
+            "node": "Ready to Save Suggestion?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Decision Content": {
+      "main": [
+        [
+          {
+            "node": "Prepare Decision Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply - Missing Decision Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Decision Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Gemini - Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Gemini - Decision": {
+      "main": [
+        [
+          {
+            "node": "Validate Decision Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Decision Output": {
+      "main": [
+        [
+          {
+            "node": "Ready to Save Decision?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Action Content": {
+      "main": [
+        [
+          {
+            "node": "Prepare Action Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply - Missing Action Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Action Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Gemini - Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Gemini - Action": {
+      "main": [
+        [
+          {
+            "node": "Validate Action Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Action Output": {
+      "main": [
+        [
+          {
+            "node": "Ready to Save Action?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Observation Content": {
+      "main": [
+        [
+          {
+            "node": "Prepare Observation Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply - Missing Observation Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Observation Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Gemini - Observation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Gemini - Observation": {
+      "main": [
+        [
+          {
+            "node": "Validate Observation Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Observation Output": {
+      "main": [
+        [
+          {
+            "node": "Ready to Save Observation?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ready to Save Question?": {
+      "main": [
+        [
+          {
+            "node": "Pending - Question",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Question Clarification/Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Question Clarification/Error": {
+      "main": [
+        [
+          {
+            "node": "Reply - Question Needs Clarification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ready to Save Suggestion?": {
+      "main": [
+        [
+          {
+            "node": "Pending - Suggestion",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Suggestion Clarification/Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Suggestion Clarification/Error": {
+      "main": [
+        [
+          {
+            "node": "Reply - Suggestion Needs Clarification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ready to Save Decision?": {
+      "main": [
+        [
+          {
+            "node": "Pending - Decision",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Decision Clarification/Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Decision Clarification/Error": {
+      "main": [
+        [
+          {
+            "node": "Reply - Decision Needs Clarification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ready to Save Action?": {
+      "main": [
+        [
+          {
+            "node": "Pending - Action",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Action Clarification/Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Action Clarification/Error": {
+      "main": [
+        [
+          {
+            "node": "Reply - Action Needs Clarification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ready to Save Observation?": {
+      "main": [
+        [
+          {
+            "node": "Pending - Observation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Observation Clarification/Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Observation Clarification/Error": {
+      "main": [
+        [
+          {
+            "node": "Reply - Observation Needs Clarification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pending - Question": {
+      "main": [
+        [
+          {
+            "node": "Create Pending Knowledge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pending - Suggestion": {
+      "main": [
+        [
+          {
+            "node": "Create Pending Knowledge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pending - Decision": {
+      "main": [
+        [
+          {
+            "node": "Create Pending Knowledge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pending - Action": {
+      "main": [
+        [
+          {
+            "node": "Create Pending Knowledge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pending - Observation": {
+      "main": [
+        [
+          {
+            "node": "Create Pending Knowledge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Pending Knowledge": {
+      "main": [
+        [
+          {
+            "node": "Format Confirmation Preview",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Confirmation Preview": {
+      "main": [
+        [
+          {
+            "node": "Send Confirmation Preview",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Confirmation Preview": {
+      "main": [
+        [
+          {
+            "node": "Reply - Check DMs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply - DM Unavailable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Callback Query?": {
+      "main": [
+        [
+          {
+            "node": "Parse Confirmation Callback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Confirmation Callback": {
+      "main": [
+        [
+          {
+            "node": "Valid Confirmation Callback?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Pending Knowledge": {
+      "main": [
+        [
+          {
+            "node": "Pending Item Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Same User?": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject Other User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acknowledge Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Save or Cancel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save or Cancel": {
+      "main": [
+        [
+          {
+            "node": "Pending Type Router",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Delete Pending - Cancel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Pending - Cancel": {
+      "main": [
+        [
+          {
+            "node": "Edit Preview - Cancelled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pending Type Router": {
+      "main": [
+        [
+          {
+            "node": "Insert Question to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Insert Suggestion to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Insert Decision to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Insert Action to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Insert Observation to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Question to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Delete Pending - Saved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Suggestion to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Delete Pending - Saved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Decision to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Delete Pending - Saved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Action to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Delete Pending - Saved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Observation to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Delete Pending - Saved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Pending - Saved": {
+      "main": [
+        [
+          {
+            "node": "Edit Preview - Saved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pending Item Exists?": {
+      "main": [
+        [
+          {
+            "node": "Same User?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply - Pending Missing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Confirmation Callback?": {
+      "main": [
+        [
+          {
+            "node": "Get Pending Knowledge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply - Invalid Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "1bf7ec70-be08-4a1e-b322-e74c03bf457b",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d4f70e1de2d501f6c63ac858429328d5a742d65a5c9b497243376d197c3e4567"
+  },
+  "nodeGroups": [],
+  "id": "ektqsrcNe1CaPtjM",
+  "tags": []
+}

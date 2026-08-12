@@ -85,6 +85,8 @@ MVP Executive Insights
 - **Pending Questions** — Question-category items with no resolving status change yet.
 - **Action Items** — Action-Item-category items, filterable by status.
 
+**Current implementation note:** the app's "AI Insights" page realizes this section's deterministic-first spirit with a narrower, currently-real metric set (total items, weekly growth, contributors, Telegram groups, needs-follow-up count, captures-over-time / top-tags / top-contributors charts) computed client-side from `GET /api/ideas` — not yet the full Topic Distribution/Participation Overview/Discussion Health list above. It also adds a capability not previously documented here at all: a grounded Q&A chat panel (`InsightsChat`, calling `POST /api/insights/chat`) that explains, summarizes, and compares captured knowledge on request. This chat is a distinct data path from the deterministic metrics on the same page — it never computes or replaces a KPI, and reads through a restricted, Telegram-metadata-free view (`ai_knowledge_feed`), not the raw tables. See `06_AI_PIPELINE.md`'s `<insights_ai_note>` and `13_SECURITY.md`.
+
 ---
 
 ## Executive Dashboard — AI-Generated Widgets

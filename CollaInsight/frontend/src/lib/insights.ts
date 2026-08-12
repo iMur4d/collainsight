@@ -1,19 +1,19 @@
-import { KnowledgeItem } from "./api";
+import { KnowledgeFeedItem } from "./api";
 
 const DAY_MS = 86400000;
 const dayKey = (d: Date) => d.toISOString().slice(0, 10);
 
 /** Daily capture counts, zero-filled, covering at least the last 7 days. */
-export function capturesByDay(ideas: KnowledgeItem[]): { date: string; label: string; count: number }[] {
+export function capturesByDay(items: KnowledgeFeedItem[]): { date: string; label: string; count: number }[] {
   const today = new Date();
   const counts = new Map<string, number>();
-  for (const idea of ideas) {
-    const key = dayKey(new Date(idea.created_at));
+  for (const item of items) {
+    const key = dayKey(new Date(item.created_at));
     counts.set(key, (counts.get(key) || 0) + 1);
   }
 
-  const earliestMs = ideas.length
-    ? Math.min(...ideas.map(i => new Date(i.created_at).getTime()))
+  const earliestMs = items.length
+    ? Math.min(...items.map(i => new Date(i.created_at).getTime()))
     : today.getTime();
   const spanStart = new Date(Math.min(earliestMs, today.getTime() - 6 * DAY_MS));
   spanStart.setHours(0, 0, 0, 0);
@@ -27,13 +27,13 @@ export function capturesByDay(ideas: KnowledgeItem[]): { date: string; label: st
   return days;
 }
 
-export function topContributors(ideas: KnowledgeItem[], limit = 6): { name: string; count: number }[] {
+export function topContributors(items: KnowledgeFeedItem[], limit = 6): { name: string; count: number }[] {
   const counts = new Map<string, number>();
-  for (const idea of ideas) {
-    // Skip ideas with no real Telegram identity rather than bucketing them
+  for (const item of items) {
+    // Skip items with no real Telegram identity rather than bucketing them
     // under a fabricated "unknown" contributor.
-    if (!idea.telegram_display_name) continue;
-    counts.set(idea.telegram_display_name, (counts.get(idea.telegram_display_name) || 0) + 1);
+    if (!item.telegram_display_name) continue;
+    counts.set(item.telegram_display_name, (counts.get(item.telegram_display_name) || 0) + 1);
   }
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1])
@@ -41,11 +41,20 @@ export function topContributors(ideas: KnowledgeItem[], limit = 6): { name: stri
     .map(([name, count]) => ({ name, count }));
 }
 
-/** Ideas whose structured extraction left open questions - real signal for what needs a manager's attention. */
-export function needsFollowUp(ideas: KnowledgeItem[]): KnowledgeItem[] {
-  return ideas
-    .filter(i => i.open_questions.length > 0)
-    .sort((a, b) => b.open_questions.length - a.open_questions.length);
+/** Extracts the open_questions array where it exists - today that's Idea
+ * items only (Question/Suggestion/Decision/Action/Observation don't have
+ * this attribute at all), but this checks `attributes` generically rather
+ * than assuming a type, so it stays correct if that ever changes. */
+export function openQuestionsOf(item: KnowledgeFeedItem): string[] {
+  const value = item.attributes?.open_questions;
+  return Array.isArray(value) ? (value as string[]) : [];
+}
+
+/** Items whose structured extraction left open questions - real signal for what needs a manager's attention. */
+export function needsFollowUp(items: KnowledgeFeedItem[]): KnowledgeFeedItem[] {
+  return items
+    .filter(i => openQuestionsOf(i).length > 0)
+    .sort((a, b) => openQuestionsOf(b).length - openQuestionsOf(a).length);
 }
 
 export function isWithinLastDays(iso: string, days: number, from = new Date()): boolean {
@@ -66,9 +75,9 @@ export interface GrowthMetrics {
 }
 
 /** Rolling 7-day count vs. the preceding 7-day window. */
-export function weeklyGrowth(ideas: KnowledgeItem[], now = new Date()): GrowthMetrics {
-  const thisWeek = ideas.filter(i => isWithinLastDays(i.created_at, 7, now)).length;
-  const lastWeek = ideas.filter(i => {
+export function weeklyGrowth(items: KnowledgeFeedItem[], now = new Date()): GrowthMetrics {
+  const thisWeek = items.filter(i => isWithinLastDays(i.created_at, 7, now)).length;
+  const lastWeek = items.filter(i => {
     const t = new Date(i.created_at).getTime();
     return t >= now.getTime() - 14 * DAY_MS && t < now.getTime() - 7 * DAY_MS;
   }).length;
@@ -76,10 +85,10 @@ export function weeklyGrowth(ideas: KnowledgeItem[], now = new Date()): GrowthMe
   return { thisWeek, lastWeek, deltaPct };
 }
 
-/** Average ideas captured per day since the first-ever capture (min 1 day, so a single day of activity doesn't divide by zero). */
-export function knowledgeVelocity(ideas: KnowledgeItem[], now = new Date()): number {
-  if (ideas.length === 0) return 0;
-  const earliestMs = Math.min(...ideas.map(i => new Date(i.created_at).getTime()));
+/** Average items captured per day since the first-ever capture (min 1 day, so a single day of activity doesn't divide by zero). */
+export function knowledgeVelocity(items: KnowledgeFeedItem[], now = new Date()): number {
+  if (items.length === 0) return 0;
+  const earliestMs = Math.min(...items.map(i => new Date(i.created_at).getTime()));
   const daysActive = Math.max(1, Math.ceil((now.getTime() - earliestMs) / DAY_MS));
-  return Math.round((ideas.length / daysActive) * 10) / 10;
+  return Math.round((items.length / daysActive) * 10) / 10;
 }

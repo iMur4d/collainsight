@@ -238,13 +238,31 @@ The AI is no longer responsible after this stage.
 
 <current_implementation_note>
 
-The 8 stages above describe the full long-term pipeline (see `<mvp_scope_note>` for which stages apply to the MVP at all).
+The 8 stages above describe the full long-term pipeline (see `<mvp_scope_note>` for which stages apply to the MVP at all). This note describes the current, running implementation of the applicable stages.
 
-**The currently running Phase 1 build predates the slash-command capture principle and has not been reworked to match it yet** (see `docs/PROJECT_UNDERSTANDING.md` §4/§9 for status). It runs a simplified 3-step version inside n8n: a deterministic filter (drops empty messages *and* `/commands` — the opposite of the target design, where a command is the trigger), one combined Gemini call that free-text-classifies the message and outputs `SKIP` or a category (folding Stage 1's semantic gate together with Stage 3 and Stage 6), and a deterministic validator (Stage 7). Rebuilding this workflow around explicit slash-command triggers — removing the classification step and the `SKIP` outcome in favor of deterministic validation failure — is a pending task, not yet started. Stages 2, 4, and 5 (normalization, context decision, context retrieval) are not implemented, and Stage 7's retry/escalate loop (`loop_engineering` below) is not implemented — failed validation currently just marks the item invalid rather than regenerating it.
+**`/idea`:** n8n triggers on the command and calls the Python backend (`POST /api/idea`), which runs Stage 6 via a LangGraph agent — search existing ideas, compare by underlying concept, and either save the new idea or flag it as a duplicate. Stage 7 here is the agent's own structural tool-call contract.
 
-**Stage 7's validator is temporarily a JavaScript Code node inside n8n.** This was a scoped Phase 1 decision only: n8n's hardened Docker image cannot run Python without a disproportionate task-runner setup for what Phase 1 needed. It is not a change to the approved stack — `14_TECHNOLOGY_STACK.md` still specifies Python as the long-term backend language, and Stage 7's deterministic validation logic belongs there once that backend exists. n8n's role at that point returns to orchestration only (triggering the pipeline, calling the backend), not owning the validation logic itself.
+**`/question`, `/suggestion`, `/decision`, `/action`, `/observation`:** n8n itself performs Stage 6 — a type-specific prompt calling Gemini directly for structured JSON matching that type's own schema. Stage 7 is a deterministic n8n Code node: structural checks (required fields/types) plus a semantic-completeness gate — the model also returns a `needs_clarification` flag and, when true, one `clarifying_question`. n8n evaluates that flag deterministically; an item failing either check is routed back to the submitter as a clarification request instead of reaching Stage 8.
+
+**Human Confirmation, shared by all six commands, sits between Stage 7 and Stage 8** and isn't named in the 8-stage list above: a valid, sufficiently clear result is held as a temporary pending record and previewed to the submitter privately via Telegram DM with Save/Cancel buttons before storage actually happens. See `05_WORKFLOWS.md`'s Submit Knowledge workflow for the full sequence, including the same-user check and the fallback when the submitter has never DMed the bot.
+
+Stages 2, 4, and 5 (normalization, context decision, context retrieval) are not implemented for any command. Stage 7's retry/escalate loop (`<loop_engineering>` below) is not implemented — a structurally invalid or semantically incomplete result is rejected/clarified, not regenerated.
+
+**Where deterministic validation logic lives, and why it's not "temporary":** for the five n8n-native commands, Stage 7 is a JavaScript Code node inside n8n, and stays there by design — not as scaffolding awaiting a move to the backend. Since those five commands' AI step is single-shot structured generation rather than multi-step reasoning, keeping their validation next to their extraction in n8n was a deliberate architectural decision (see `04_SYSTEM_ARCHITECTURE.md`'s `<mvp_scope_note>`), superseding an earlier assumption in this document that all validation logic would eventually move to Python. `/idea`'s validation lives in the Python backend, consistent with `14_TECHNOLOGY_STACK.md`'s approved stack.
+
+**Earlier architecture, superseded, not currently running:** the original Phase 1 build (`automation/workflows/telegram-discussion-extraction.json`) predates the 2026-08-02 slash-command decision. It ran a 3-step pipeline that dropped `/commands` instead of triggering on them, had Gemini free-text-classify each message into a category or `SKIP`, and validated with a Code node — structurally similar to today's five n8n-native branches, but classifying arbitrary messages instead of extracting within an already-chosen category. That file remains in the repo as historical reference only, not a description of the current system.
 
 </current_implementation_note>
+
+---
+
+<insights_ai_note>
+
+**Insights AI is a separate capability, outside the 8-stage capture pipeline above.** It does not extract or generate knowledge — it answers a manager's question, read-only, grounded in already-confirmed knowledge. `POST /api/insights/chat` retrieves a bounded recent window from `ai_knowledge_feed` (a restricted Supabase view with no Telegram metadata and no raw message text) via a dedicated least-privilege `ai_readonly` Postgres role, then makes one single-shot Gemini call instructed to answer only from what it was given and say so plainly when the data doesn't support an answer. No LangGraph, no tool-calling, no multi-turn state. See `08_BACKEND_SPEC.md` and `13_SECURITY.md` for the access-boundary detail, and `07_DATABASE_SCHEMA.md` for `ai_knowledge_feed`'s shape.
+
+This is distinct from — and must stay distinct from — the deterministic KPIs/charts on the Dashboard and AI Insights pages, which remain entirely application-computed per this document's "Facts Are Computed, Not Generated" principle. Insights AI explains and synthesizes; it never replaces a computed figure.
+
+</insights_ai_note>
 
 ---
 
