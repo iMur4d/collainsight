@@ -243,7 +243,7 @@ It allows visual orchestration of steps such as:
 
 n8n should remain focused on orchestration rather than owning the core domain model.
 
-**Current state (Phase 1):** n8n today also hosts a temporary JavaScript validation step (the deterministic output-shape check described in `06_AI_PIPELINE.md` Stage 7). This is scaffolding to unblock Phase 1 without a Python backend service yet existing, not a change to the approved stack. The long-term backend is Python; once it exists, this validation logic moves there and n8n (if it continues to be used at all) goes back to being a pure orchestration layer — triggering the pipeline and calling the backend, never owning business or validation logic itself.
+**Current state:** n8n hosts a deterministic JavaScript validation step (the output-shape check described in `06_AI_PIPELINE.md` Stage 7) for the five non-Idea commands (`/question`, `/suggestion`, `/decision`, `/action`, `/observation`). This is a deliberate architectural decision, not temporary scaffolding awaiting a move to the backend: those five commands' AI step is single-shot structured generation rather than multi-step reasoning, so keeping their validation next to their extraction in n8n avoids an unnecessary round-trip to the backend for logic that doesn't need Python's agentic capabilities. `/idea`'s validation lives in the Python backend, consistent with the approved stack below — see `docs/PROJECT_UNDERSTANDING.md` §8 for the full deterministic-vs-LLM breakdown.
 
 </workflow_rationale>
 

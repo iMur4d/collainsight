@@ -12,10 +12,10 @@ This document provides a quick overview of where the project is at any given tim
 <current_status>
 
 ## Status Overview
-**Phase:** Proof of Concept validated end-to-end — preparing for internal rehearsal presentation
+**Phase:** MVP implemented and validated end-to-end; final documentation and repository polish in progress
 **Overall Health:** 🟢 On Track
 
-**Read this alongside [`docs/ai-agent-code-work/claude/2026-08-06-session-log.md`](docs/ai-agent-code-work/claude/2026-08-06-session-log.md) for the full detail behind every line below.**
+**Read this alongside [`docs/PROJECT_UNDERSTANDING.md`](docs/PROJECT_UNDERSTANDING.md) for the full detail behind every line below.**
 
 </current_status>
 
@@ -31,14 +31,14 @@ This document provides a quick overview of where the project is at any given tim
 - [x] **Milestone 4:** MVP Scope Finalized
 - [x] **Milestone 5:** Phase 1 - Workflow Validation (Telegram → n8n → AI → JSON) — **validated live end-to-end on 2026-08-06**, real Telegram message through n8n Cloud, the backend, and back
 - [x] **Milestone 6 (PoC only):** Backend + Idea Agent — FastAPI + LangGraph Idea Agent live, writing to a minimal `poc_ideas` Supabase table. **Not** the production `KnowledgeItem` schema in `docs/engineering/07_DATABASE_SCHEMA.md` — that's still Milestone 6's real remaining work.
-- [x] **Milestone 7 (PoC only):** Dashboard, Knowledge, and AI Insights pages all read live data from a new `GET /api/ideas` backend endpoint — no fake metrics, no fake charts. No auth, no manager status/review workflow, no pagination.
+- [x] **Milestone 7 (PoC only):** Dashboard, Knowledge, and AI Insights pages all read live data from `GET /api/knowledge` (all six knowledge types; the original `GET /api/ideas` endpoint is retained for compatibility) — no fake metrics, no fake charts. No auth, no manager status/review workflow, no pagination.
 - [x] **Milestone 10:** All six slash commands live (2026-08-12) — `/question`, `/suggestion`, `/decision`, `/action`, `/observation` implemented as n8n-native Gemini extraction + deterministic validation, each with its own type-specific schema (not a shared generic one). `/idea` unchanged, still backend-owned.
-- [x] **Milestone 11:** Human confirmation before storage (2026-08-12) — every one of the six commands' extracted result is held in a temporary `pending_knowledge` record and previewed privately to the submitter via Telegram DM with Save/Cancel, before anything reaches permanent storage. A private-DM-unavailable fallback safely instructs the submitter in the group without exposing the extracted content there.
+- [x] **Milestone 11:** Human confirmation before storage (2026-08-12) — for the five n8n-native commands (`/question`/`/suggestion`/`/decision`/`/action`/`/observation`), each extracted result is held in a temporary `pending_knowledge` record and previewed privately to the submitter via Telegram DM with Save/Cancel, before anything reaches permanent storage. A private-DM-unavailable fallback safely instructs the submitter in the group without exposing the extracted content there. `/idea` is not part of this flow — it's saved or flagged-as-duplicate directly by the backend LangGraph agent (Milestone 6).
 - [x] **Milestone 12 (PoC only):** Insights AI (2026-08-12) — `POST /api/insights/chat`, read-only grounded Q&A over confirmed knowledge via a restricted `ai_knowledge_feed` view and a dedicated least-privilege `ai_readonly` Postgres role. The access boundary (can read the view, cannot read or write the six raw tables) has been verified live, not assumed.
 - [ ] **Milestone 8:** Phase 4 - Authentication & RBAC
 - [ ] **Milestone 9:** Phase 5 - Polish, Error Handling & MVP Release
 
-**All six extraction agents are now implemented** (Idea/Question/Suggestion/Decision/Action/Observation) — this supersedes the earlier note that only the Idea Agent was live. **Known issue, not yet fixed:** the five n8n `Insert <Type> to Supabase` nodes have a malformed expression syntax (`={ ... }` instead of `={{ ... }}`) that will write literal placeholder text instead of real data on Save, until corrected.
+**All six extraction agents are now implemented** (Idea/Question/Suggestion/Decision/Action/Observation) — this supersedes the earlier note that only the Idea Agent was live.
 
 </milestones>
 
@@ -50,10 +50,10 @@ This document provides a quick overview of where the project is at any given tim
 
 ### Recent Updates (2026-08-12)
 - **All five remaining slash commands implemented in n8n**, each with its own prompt and JSON schema (not a shared generic one) — `/question`, `/suggestion`, `/decision`, `/action`, `/observation` now perform real Gemini extraction and deterministic validation, including a semantic-completeness gate (`needs_clarification`) that returns a clarification question instead of storing an ambiguous item.
-- **Private confirmation before storage, for all six commands.** Extracted results are held as temporary `pending_knowledge` records and previewed to the submitter privately via Telegram DM with Save/Cancel — never posted in the group. A same-user check defends the callback; a DM-unavailable fallback safely instructs first-time submitters in the group without exposing extracted content there.
+- **Private confirmation before storage, for the five n8n-native commands** (`/question`/`/suggestion`/`/decision`/`/action`/`/observation`). Extracted results are held as temporary `pending_knowledge` records and previewed to the submitter privately via Telegram DM with Save/Cancel — never posted in the group. A same-user check defends the callback; a DM-unavailable fallback safely instructs first-time submitters in the group without exposing extracted content there. `/idea` is handled separately by the backend agent, which saves or flags-as-duplicate directly.
 - **Insights AI added** (`POST /api/insights/chat`) — read-only, grounded Q&A over confirmed knowledge, reading through a restricted `ai_knowledge_feed` view via a dedicated least-privilege `ai_readonly` role. The access boundary was verified live: the role can read the view but cannot read or write any of the six raw knowledge tables.
 - **Frontend:** shared client-side cache for `useIdeas()` (fixes repeated refetch/loading-flash when navigating Dashboard/Knowledge/Insights); AI Insights page gained a grounded chat panel with markdown rendering and auto-scroll; removed remaining fake placeholder content (a hardcoded fake user identity and hardcoded fake search results in the app shell, a stale copyright year).
-- **Known issue found, not yet fixed:** the five `Insert <Type> to Supabase` n8n nodes use malformed expression syntax and will not write real data to the permanent tables until corrected — see `docs/PROJECT_UNDERSTANDING.md` §9.
+- **Known issue found this day, fixed later the same day:** the five `Insert <Type> to Supabase` n8n nodes used malformed expression syntax and would not have written real data to the permanent tables — see `docs/PROJECT_UNDERSTANDING.md` §9 for the original finding. Corrected; all five nodes now use valid `={{ ... }}` expressions throughout.
 - **Known discrepancy found, not resolved:** `00_MVP_SCOPE.md` and `10_API_SPEC.md` both state the MVP does not perform automatic AI duplicate detection, but the live `/idea` agent's core, demoed behavior is exactly that. Flagged for a scoping decision, not silently resolved by this pass.
 
 ---
@@ -69,9 +69,7 @@ This document provides a quick overview of where the project is at any given tim
 ---
 
 ### Upcoming (Next Steps)
-- Fix the malformed expression syntax in the five `Insert <Type> to Supabase` n8n nodes (see 2026-08-12 entry above) before relying on Save for those commands.
 - Reconcile the "Automatic AI Duplicate Detection" scope claim in `00_MVP_SCOPE.md`/`10_API_SPEC.md` against the fact that duplicate detection is already built and demoed by the `/idea` agent (flagged repeatedly, not yet resolved).
-- Wire the dashboard/`GET /api/ideas` to the five new knowledge tables — it currently reads `poc_ideas` only, so confirmed Questions/Suggestions/Decisions/Actions/Observations aren't visible in the UI yet even though they're being saved.
 - Move the six flat PoC tables to the real `KnowledgeItem` schema and add the manager status/review workflow (Pending/Approved/Rejected/etc.) — currently only a disabled "Coming Soon" button exists in the UI.
 - Add authentication to the backend before it's exposed beyond a rehearsal demo window.
 

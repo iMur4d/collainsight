@@ -1,5 +1,7 @@
 # Changelog
 
+This file covers the early documentation-authoring phase only (v0.1.0–v0.4.0). For current implementation status, milestones, and the ongoing changelog, see [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
+
 v0.1.0
 Documentation Foundation
 
